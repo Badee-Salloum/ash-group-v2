@@ -1,0 +1,492 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  SUPERVISOR
+  ACCOUNT_MGR
+  MANAGER   // Phase 2 — مدير فرع/فريق
+  EMPLOYEE  // Phase 2 — موظف عادي
+}
+
+model User {
+  id                String    @id @default(cuid())
+  name              String
+  email             String    @unique
+  passwordHash      String
+  role              UserRole  @default(SUPERVISOR)
+  twoFactorSecret   String?
+  twoFactorEnabled  Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  failedLogins      Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // ─── Phase 2: Employee Profile (Module A) ───
+  employeeCode    String?   @unique
+  jobTitle        String?
+  hireDate        DateTime?
+  baseSalary      Decimal?  @db.Decimal(15, 2)
+  phone           String?
+  address         String?
+  avatarUrl       String?
+  // Hierarchy: each user has at most one direct manager
+  managerId       String?
+  manager         User?     @relation("EmployeeHierarchy", fields: [managerId], references: [id])
+  subordinates    User[]    @relation("EmployeeHierarchy")
+  // NOTE: weeklyOffDays column will be added once `npx prisma db push` runs
+  // against Neon. Until then, the field is omitted from the schema so SELECTs
+  // don't fail. Form code defaults to 1 day off when reading.
+
+  accountAccess AccountAccess[]
+  auditLogs     AuditLog[]
+  expenses      Expense[]
+  uploadBatches UploadBatch[]
+
+  // Phase 2 relations
+  shiftSessions     ShiftSession[]      @relation("ShiftSessionUser")
+  approvedSessions  ShiftSession[]      @relation("ShiftSessionApprover")
+  walletAssignments EmployeeWalletAssignment[]
+  scheduledShifts   Shift[]             @relation("ShiftAssignee")
+  assignedShifts    Shift[]             @relation("ShiftAssigner")
+  payrollEntries    PayrollEntry[]
+  advanceRequests   AdvanceRequest[]    @relation("AdvanceRequester")
+  approvedAdvances  AdvanceRequest[]    @relation("AdvanceApprover")
+  bonusLogs         BonusLog[]          @relation("BonusRecipient")
+  bonusesGiven      BonusLog[]          @relation("BonusCreator")
+  handledTransactions Transaction[]     @relation("TransactionHandler")
+  // Phase 3 — custom roles
+  customRoles     UserRoleAssignment[]  @relation("UserCustomRoles")
+
+  @@index([managerId])
+  @@map("users")
+}
+
+model AccountAccess {
+  id        String  @id @default(cuid())
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, accountId])
+  @@map("account_access")
+}
+
+model Account {
+  id                   String   @id @default(cuid())
+  name                 String
+  currency             String   @default("USD")
+  depositProfitRate    Decimal  @db.Decimal(5, 2)
+  withdrawalProfitRate Decimal  @db.Decimal(5, 2)
+  walletIdentifiers    String[]
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  transactions      Transaction[]
+  uploadBatches     UploadBatch[]
+  profitRateHistory ProfitRateHistory[]
+  accountAccess     AccountAccess[]
+  // Phase 2 — wallet assignments per employee (Module C)
+  employeeAssignments EmployeeWalletAssignment[]
+
+  @@map("accounts")
+}
+
+model ProfitRateHistory {
+  id                   String   @id @default(cuid())
+  account              Account  @relation(fields: [accountId], references: [id])
+  accountId            String
+  depositProfitRate    Decimal  @db.Decimal(5, 2)
+  withdrawalProfitRate Decimal  @db.Decimal(5, 2)
+  changedAt            DateTime @default(now())
+  changedBy            String
+
+  @@map("profit_rate_history")
+}
+
+enum BatchStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model UploadBatch {
+  id              String      @id @default(cuid())
+  account         Account     @relation(fields: [accountId], references: [id])
+  accountId       String
+  batchDate       DateTime
+  shamCashFile    String?
+  depositsFile    String?
+  withdrawalsFile String?
+  status          BatchStatus @default(PROCESSING)
+  processedAt     DateTime?
+  rowsProcessed   Int         @default(0)
+  errorLog        String?
+  createdAt       DateTime    @default(now())
+  uploadedBy      String
+  uploader        User        @relation(fields: [uploadedBy], references: [id])
+
+  transactions Transaction[]
+
+  @@map("upload_batches")
+}
+
+enum TransactionSource {
+  SHAM_CASH
+  PLATFORM
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum TransactionStatus {
+  MATCHED
+  PENDING_SC
+  PENDING_P
+  DISCREPANCY
+  WASTE
+}
+
+enum ReviewCategory {
+  THEFT          // سرقة
+  WASTE          // هدر
+  EXTRA          // زيادة
+  EMPLOYEE_ERROR // خطأ موظف
+  CUSTOMER_ERROR // خطأ زبون
+  PLATFORM_ERROR // خطأ منصة
+  COMPLAINT      // شكوى
+  OTHER          // غير ذلك
+}
+
+model Transaction {
+  id             String            @id @default(cuid())
+  account        Account           @relation(fields: [accountId], references: [id])
+  accountId      String
+  batch          UploadBatch       @relation(fields: [batchId], references: [id])
+  batchId        String
+  source         TransactionSource
+  type           TransactionType
+  shamCashTxId   String?
+  platformTxId   String?
+  platformUserId String?
+  amount         Decimal           @db.Decimal(15, 2)
+  currency       String            @default("USD")
+  txDateTime     DateTime
+  status         TransactionStatus @default(PENDING_P)
+  matchedTxId    String?
+  matchedTx      Transaction?      @relation("MatchedPair", fields: [matchedTxId], references: [id])
+  matchedBy      Transaction[]     @relation("MatchedPair")
+  amountDiff     Decimal?          @db.Decimal(15, 2)
+  rawData        Json?
+  notes          String?
+  // Manual review metadata (for non-matched operations)
+  reviewCategory ReviewCategory?
+  reviewNotes    String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  // Phase 2 — Module D: link to handling employee
+  handledByUserId    String?
+  handledByUser      User?         @relation("TransactionHandler", fields: [handledByUserId], references: [id])
+  handledInSessionId String?
+  handledInSession   ShiftSession? @relation("TransactionSession", fields: [handledInSessionId], references: [id])
+  handlerAmbiguous   Boolean       @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([accountId, status])
+  @@index([reviewCategory])
+  @@index([shamCashTxId])
+  @@index([platformUserId])
+  @@index([txDateTime])
+  @@index([handledByUserId])
+  @@map("transactions")
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  description String
+  amount      Decimal   @db.Decimal(15, 2)
+  category    String?
+  expenseDate DateTime
+  createdBy   User      @relation(fields: [userId], references: [id])
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@map("expenses")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE 2 — INTERNAL OPERATIONS (Modules A, B, C, D, E, G, I, J, K)
+// ════════════════════════════════════════════════════════════════════════════
+
+enum ShiftSessionStatus {
+  ACTIVE
+  PENDING_END
+  PENDING_START
+  COMPLETED
+  CANCELLED
+}
+
+enum ShiftNumber {
+  ONE
+  TWO
+  THREE
+}
+
+enum PayrollStatus {
+  DRAFT
+  CONFIRMED
+  PAID
+}
+
+enum AdvanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum BonusType {
+  CUMULATIVE
+  GROUP
+  MANUAL
+}
+
+model ShiftSession {
+  id                 String              @id @default(cuid())
+  user               User                @relation("ShiftSessionUser", fields: [userId], references: [id])
+  userId             String
+  shiftNumber        ShiftNumber?
+  startAt            DateTime            @default(now())
+  endAt              DateTime?
+  durationMinutes    Int?
+  status             ShiftSessionStatus  @default(ACTIVE)
+  handoverFromUserId String?
+  approvedBy         User?               @relation("ShiftSessionApprover", fields: [approvedById], references: [id])
+  approvedById       String?
+  approvedAt         DateTime?
+  notes              String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  wallets      ShiftSessionWallet[]
+  transactions Transaction[]       @relation("TransactionSession")
+
+  @@index([userId])
+  @@index([status])
+  @@index([startAt])
+  @@map("shift_sessions")
+}
+
+model EmployeeWalletAssignment {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, accountId])
+  @@index([userId])
+  @@map("employee_wallet_assignments")
+}
+
+model ShiftSessionWallet {
+  id        String       @id @default(cuid())
+  session   ShiftSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  accountId String
+  createdAt DateTime     @default(now())
+
+  @@unique([sessionId, accountId])
+  @@index([sessionId])
+  @@map("shift_session_wallets")
+}
+
+model Shift {
+  id           String      @id @default(cuid())
+  date         DateTime    @db.Date
+  shiftNumber  ShiftNumber
+  user         User        @relation("ShiftAssignee", fields: [userId], references: [id])
+  userId       String
+  assignedBy   User?       @relation("ShiftAssigner", fields: [assignedById], references: [id])
+  assignedById String?
+  isDayOff     Boolean     @default(false)
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([date, shiftNumber, userId])
+  @@index([date])
+  @@index([userId])
+  @@map("shifts")
+}
+
+model PayrollEntry {
+  id              String        @id @default(cuid())
+  user            User          @relation(fields: [userId], references: [id])
+  userId          String
+  weekStart       DateTime      @db.Date
+  weekEnd         DateTime      @db.Date
+  baseSalary      Decimal       @db.Decimal(15, 2)
+  workedHours     Decimal       @default(0) @db.Decimal(7, 2)
+  expectedHours   Decimal       @default(40) @db.Decimal(7, 2)
+  bonusAmount     Decimal       @default(0) @db.Decimal(15, 2)
+  advanceAmount   Decimal       @default(0) @db.Decimal(15, 2)
+  deductions      Decimal       @default(0) @db.Decimal(15, 2)
+  netAmount       Decimal       @db.Decimal(15, 2)
+  status          PayrollStatus @default(DRAFT)
+  paidAt          DateTime?
+  notes           String?
+  advanceRequests AdvanceRequest[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([userId, weekStart])
+  @@index([userId])
+  @@index([weekStart])
+  @@map("payroll_entries")
+}
+
+model AdvanceRequest {
+  id             String         @id @default(cuid())
+  user           User           @relation("AdvanceRequester", fields: [userId], references: [id])
+  userId         String
+  amount         Decimal        @db.Decimal(15, 2)
+  reason         String?
+  status         AdvanceStatus  @default(PENDING)
+  approvedBy     User?          @relation("AdvanceApprover", fields: [approvedById], references: [id])
+  approvedById   String?
+  approvedAt     DateTime?
+  payrollEntry   PayrollEntry?  @relation(fields: [payrollEntryId], references: [id])
+  payrollEntryId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("advance_requests")
+}
+
+model BonusLog {
+  id          String    @id @default(cuid())
+  user        User      @relation("BonusRecipient", fields: [userId], references: [id])
+  userId      String
+  amount      Decimal   @db.Decimal(15, 2)
+  type        BonusType
+  reason      String?
+  createdBy   User?     @relation("BonusCreator", fields: [createdById], references: [id])
+  createdById String?
+  weekStart   DateTime? @db.Date
+  appliedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([weekStart])
+  @@map("bonus_logs")
+}
+
+// ─── Custom Roles & Permissions (Phase 3) ───────────────────────────────────
+// These tables enable admin-defined roles. Until `prisma db push` is run on
+// Neon, the application falls back to the legacy enum-role + ROLE_DEFAULT_
+// PERMISSIONS map. The /roles page degrades gracefully when the tables are
+// missing.
+
+model CustomRole {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  displayName  String
+  description  String?
+  isSystemRole Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  permissions  RolePermission[]
+  assignments  UserRoleAssignment[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("custom_roles")
+}
+
+model RolePermission {
+  id            String     @id @default(cuid())
+  role          CustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+  permissionKey String
+
+  @@unique([roleId, permissionKey])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  id         String     @id @default(cuid())
+  user       User       @relation("UserCustomRoles", fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  role       CustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId     String
+  assignedAt DateTime   @default(now())
+
+  @@unique([userId, roleId])
+  @@map("user_role_assignments")
+}
+
+// ─── Phase 3: Global System Settings ───
+// Simple key/value store for app-wide settings (e.g. default weekly off days).
+// Read via `getSystemSetting(key, fallback)` helper which is defensive and
+// returns the fallback if the table doesn't yet exist (pre-`prisma db push`).
+// ─── Phase 3: Resolved customer names ───
+// Canonical mapping platformUserId → displayName, populated automatically the
+// moment a transaction reaches MATCHED status with a non-empty SC accountName,
+// and editable by admins. Resolver consults this table FIRST before falling
+// back to scanning rawData.
+model Customer {
+  platformUserId String   @id
+  displayName    String
+  source         String   @default("AUTO") // AUTO | MANUAL
+  updatedBy      String?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@map("customers")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("system_settings")
+}

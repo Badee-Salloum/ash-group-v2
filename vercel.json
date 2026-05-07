@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/weekly-payroll",
+      "schedule": "5 0 * * 0"
+    }
+  ]
+}

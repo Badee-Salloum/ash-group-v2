@@ -1,0 +1,22 @@
+node_modules
+.next
+.env
+.env.production
+.env.local
+.env.*
+.vercel
+
+# Local Claude/agent settings — may contain tokens
+.claude/settings.local.json
+.claude/.credentials.json
+.claude-flow/
+
+# Build artifacts
+.next/
+out/
+dist/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
