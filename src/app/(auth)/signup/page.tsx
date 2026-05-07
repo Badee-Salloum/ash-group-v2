@@ -1,10 +1,11 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { User, Lock, UserPlus, Loader2, CheckCircle2 } from 'lucide-react'
+import { User, Mail, Lock, UserPlus, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function SignupPage() {
   const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -17,6 +18,10 @@ export default function SignupPage() {
 
     if (name.trim().length < 2) {
       setError('الاسم يجب أن يكون حرفين على الأقل')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('البريد الإلكتروني غير صالح')
       return
     }
     if (password.length < 8) {
@@ -33,7 +38,11 @@ export default function SignupPage() {
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), password }),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
       })
       const data = await res.json()
       if (!data.success) {
@@ -111,6 +120,31 @@ export default function SignupPage() {
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
               اكتب اسمك كما هو مسجّل في الشركة لتسريع التفعيل
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              البريد الإلكتروني
+            </label>
+            <div className="relative">
+              <Mail size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-white text-sm
+                  focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500
+                  placeholder:text-gray-300 transition-all shadow-sm"
+                placeholder="name@company.com"
+                required
+                autoComplete="email"
+                maxLength={160}
+                dir="ltr"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              استخدم بريدك الرسمي للعمل
             </p>
           </div>
 

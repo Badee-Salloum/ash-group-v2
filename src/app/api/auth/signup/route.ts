@@ -15,26 +15,17 @@ const signupSchema = z.object({
     .trim()
     .min(2, 'الاسم يجب أن يكون حرفين على الأقل')
     .max(80, 'الاسم طويل جداً'),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email('البريد الإلكتروني غير صالح')
+    .max(160),
   password: z
     .string()
     .min(8, 'كلمة المرور يجب أن تكون 8 أحرف على الأقل')
     .max(128),
 })
-
-function slugify(name: string): string {
-  // Keep Arabic + ASCII letters/digits, replace whitespace with '-'
-  const cleaned = name
-    .normalize('NFKC')
-    .replace(/[^\p{L}\p{N}\s_-]+/gu, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .toLowerCase()
-  return cleaned || 'user'
-}
-
-function randomSuffix(len = 6): string {
-  return Math.random().toString(36).slice(2, 2 + len)
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,15 +44,19 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { name, password } = signupSchema.parse(body)
+    const { name, email, password } = signupSchema.parse(body)
 
-    // Generate a unique placeholder email — admin replaces it on activation.
-    const slug = slugify(name)
-    let email = `${slug}-${randomSuffix()}@pending.ash-group.local`
-    for (let i = 0; i < 5; i++) {
-      const existing = await db.user.findUnique({ where: { email } })
-      if (!existing) break
-      email = `${slug}-${randomSuffix()}@pending.ash-group.local`
+    // Reject if email already used. Returns a generic message either way to
+    // avoid leaking which emails are registered.
+    const existing = await db.user.findUnique({
+      where: { email },
+      select: { id: true },
+    })
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: 'هذا البريد مسجّل مسبقاً. تواصل مع الإدارة إذا كنت تعتقد أن هذا خطأ.' },
+        { status: 409 },
+      )
     }
 
     const passwordHash = await bcrypt.hash(password, 10)
