@@ -49,20 +49,34 @@ export async function middleware(req: NextRequest) {
   // Role-based landing rules. MANAGER (مدير فرع) is scoped to HR — no
   // financial dashboard, profits, reconciliation, etc.
   const isManager = session.role === 'MANAGER'
+  const isEmployee = session.role === 'EMPLOYEE'
   const MANAGER_BLOCKED_PREFIXES = [
     '/dashboard', '/reconciliation', '/profits', '/expenses',
     '/upload', '/upload-history', '/consolidation-log',
-    '/accounts', '/users', '/roles',
+    '/accounts', '/users', '/roles', '/pending-signups',
   ]
+  // EMPLOYEE: scoped to personal pages (own dashboard, own shifts, settings).
+  // Blocks financial admin pages AND HR admin pages.
+  const EMPLOYEE_ALLOWED_PREFIXES = ['/my', '/shifts', '/settings', '/profile', '/api']
+
   if (isManager && !pathname.startsWith('/api/')) {
     if (MANAGER_BLOCKED_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) {
       return NextResponse.redirect(new URL('/manager', req.url))
     }
   }
 
-  // Redirect root to landing page (dashboard for most, /employees for MANAGER).
+  if (isEmployee && !pathname.startsWith('/api/')) {
+    const allowed = EMPLOYEE_ALLOWED_PREFIXES.some(
+      p => pathname === p || pathname.startsWith(p + '/'),
+    )
+    if (!allowed) {
+      return NextResponse.redirect(new URL('/my', req.url))
+    }
+  }
+
+  // Redirect root to landing page per role.
   if (pathname === '/') {
-    const landing = isManager ? '/manager' : '/dashboard'
+    const landing = isManager ? '/manager' : isEmployee ? '/my' : '/dashboard'
     return NextResponse.redirect(new URL(landing, req.url))
   }
 

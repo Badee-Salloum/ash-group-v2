@@ -31,7 +31,8 @@ function LoginContent() {
       const data = await res.json()
       if (!data.success) { setError(data.error || 'خطأ في تسجيل الدخول'); return }
       if (data.requires2FA) { window.location.href = '/verify-2fa'; return }
-      window.location.href = '/dashboard'
+      // Send to root — middleware redirects to the correct landing per role.
+      window.location.href = '/'
     } catch {
       setError('خطأ في الاتصال بالخادم')
     } finally {

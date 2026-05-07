@@ -22,7 +22,7 @@ export default function Verify2FAPage() {
       })
       const d = await res.json()
       if (!d.success) throw new Error(d.error || 'خطأ في التحقق')
-      router.push('/dashboard')
+      router.push('/')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

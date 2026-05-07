@@ -8,6 +8,18 @@ export async function GET() {
     const session = await getSession()
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
+    // Financial dashboard is for finance/admin roles only — EMPLOYEE/MANAGER
+    // (HR-scoped) must not see global revenue, profits, or transactions.
+    const allowed: string[] = [
+      UserRole.ADMIN,
+      UserRole.SUPERVISOR,
+      UserRole.ACCOUNT_MGR,
+      'ACCOUNTANT',
+    ]
+    if (!allowed.includes(session.role)) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 403 })
+    }
+
     // Determine accessible accounts
     let accountIds: string[] | undefined
     if (session.role === UserRole.ACCOUNT_MGR) {
