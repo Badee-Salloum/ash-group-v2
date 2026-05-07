@@ -4,10 +4,9 @@ import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { rateLimit } from '@/lib/rateLimit'
 
-// Signup is intentionally minimal: only name + password. Email is auto-generated
-// as a unique placeholder; admin updates it during activation. New accounts are
-// created inactive (`isActive: false`) and cannot log in until an administrator
-// activates them and assigns a real email/role.
+// Signup collects name + email + password. Accounts are created inactive
+// (`isActive: false`) and cannot log in until an administrator activates
+// them and assigns the appropriate role. Email is unique per the schema.
 
 const signupSchema = z.object({
   name: z
