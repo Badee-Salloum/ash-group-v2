@@ -6,7 +6,7 @@ import { UserRole } from '@/lib/db/prisma-types'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp, Wallet,
   Users, Settings, Building2, Upload, History, X, Layers, UserCircle,
-  Briefcase, Clock, Calendar, DollarSign, LayoutGrid, FileSpreadsheet, ChevronDown, Sparkles,
+  Briefcase, Clock, Calendar, DollarSign, LayoutGrid, FileSpreadsheet, ChevronDown, Sparkles, UserPlus,
 } from 'lucide-react'
 
 interface NavItem {
@@ -68,6 +68,7 @@ const SECTIONS: NavSection[] = [
   {
     title: 'النظام',
     items: [
+      { href: '/pending-signups', label: 'طلبات التسجيل', icon: <UserPlus size={18} />, roles: [UserRole.ADMIN] },
       { href: '/users',    label: 'حسابات النظام', icon: <Users size={18} />,    roles: [UserRole.ADMIN] },
       { href: '/roles',    label: 'الأدوار والصلاحيات', icon: <Briefcase size={18} />, roles: [UserRole.ADMIN] },
       { href: '/settings', label: 'الإعدادات',     icon: <Settings size={18} />, roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPERVISOR, UserRole.ACCOUNT_MGR, UserRole.EMPLOYEE] },
