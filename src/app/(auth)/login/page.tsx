@@ -154,6 +154,13 @@ function LoginContent() {
             </button>
           </form>
 
+          <p className="text-center text-sm text-gray-500 mt-6">
+            ليس لديك حساب؟{' '}
+            <a href="/signup" className="text-[#0a2540] font-semibold hover:underline">
+              إنشاء حساب جديد
+            </a>
+          </p>
+
           <p className="text-center text-[11px] text-gray-300 mt-8">
             ASH GROUP Financial Services v1.0
           </p>

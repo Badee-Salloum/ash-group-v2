@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 
-const PUBLIC_PATHS = ['/login', '/verify-2fa', '/api/auth/login', '/api/auth/2fa/verify']
+const PUBLIC_PATHS = ['/login', '/signup', '/verify-2fa', '/api/auth/login', '/api/auth/signup', '/api/auth/2fa/verify']
 const SESSION_TIMEOUT_MS = parseInt(process.env.SESSION_TIMEOUT_MINUTES || '30') * 60 * 1000
 
 export async function middleware(req: NextRequest) {
