@@ -51,7 +51,7 @@ export async function middleware(req: NextRequest) {
   const isManager = session.role === 'MANAGER'
   const isEmployee = session.role === 'EMPLOYEE'
   const MANAGER_BLOCKED_PREFIXES = [
-    '/dashboard', '/reconciliation', '/profits', '/expenses',
+    '/dashboard', '/reconciliation', '/follow-ups', '/profits', '/expenses',
     '/upload', '/upload-history', '/consolidation-log',
     '/accounts', '/users', '/roles', '/pending-signups',
   ]

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { fmtSyria, fmtSyriaDate } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
 import { Loader2, LogIn, LogOut, Clock, AlertTriangle, TrendingUp, Sparkles, Award, Calendar, Activity } from 'lucide-react'
+import { FollowUpStatsWidget } from '../follow-ups/_components/FollowUpStatsWidget'
 
 const ACTION_LABEL: Record<string, string> = {
   CHECK_IN: 'تسجيل دخول',
@@ -114,6 +115,9 @@ export default function MyDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Personal follow-up assignments — hidden when nothing is assigned */}
+      <FollowUpStatsWidget mode="mine" hideIfEmpty />
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

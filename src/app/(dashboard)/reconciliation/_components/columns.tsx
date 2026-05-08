@@ -7,7 +7,7 @@ import ManualWithdrawalLink from '@/components/forms/ManualWithdrawalLink'
 import ManualDepositLink from '@/components/forms/ManualDepositLink'
 import SuggestMatchButton from '@/components/forms/SuggestMatchButton'
 import {
-  Transaction, TxStatus, TxType, ReviewCat,
+  Transaction, TxStatus, TxType, ReviewCat, FollowUpStat,
   REVIEW_LABELS, REVIEW_COLORS, STATUS_LABELS, TYPE_LABELS,
   MatchInfoMap,
 } from './types'
@@ -66,17 +66,34 @@ export function buildColumns({
         const status = row.status as TxStatus
         const notes = (row.reviewNotes as string | null) || ''
         const reviewedAt = row.reviewedAt as string | null
+        const followUp = row.followUpStatus as FollowUpStat | null
+        const followUpActive = followUp === 'OPEN' || followUp === 'IN_PROGRESS'
         if (cat) {
           const tipParts = [REVIEW_LABELS[cat]]
           if (notes) tipParts.push(notes)
           if (reviewedAt) tipParts.push(`في ${fmtSyria(reviewedAt, false)}`)
           return (
-            <span
-              className={`badge ring-1 ${REVIEW_COLORS[cat]}`}
-              title={tipParts.join('\n')}
-            >
-              {REVIEW_LABELS[cat]}
-            </span>
+            <div className="flex flex-col gap-1 items-start">
+              <span
+                className={`badge ring-1 ${REVIEW_COLORS[cat]}`}
+                title={tipParts.join('\n')}
+              >
+                {REVIEW_LABELS[cat]}
+              </span>
+              {followUpActive && (
+                <Link
+                  href={`/follow-ups?status=${followUp}`}
+                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ring-1 transition-colors ${
+                    followUp === 'OPEN'
+                      ? 'bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100'
+                      : 'bg-sky-50 text-sky-700 ring-sky-200 hover:bg-sky-100'
+                  }`}
+                  title="افتح صفحة المتابعات"
+                >
+                  {followUp === 'OPEN' ? '● متابعة مفتوحة' : '● قيد المعالجة'}
+                </Link>
+              )}
+            </div>
           )
         }
         // Non-reviewed: show "مراجعة" button only for non-matched rows

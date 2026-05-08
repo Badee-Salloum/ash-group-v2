@@ -7,6 +7,7 @@ export type TransactionType = 'DEPOSIT' | 'WITHDRAWAL'
 export type TransactionSource = 'SHAM_CASH' | 'PLATFORM'
 export type BatchStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED'
 export type ReviewCategory = 'THEFT' | 'WASTE' | 'EXTRA' | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR' | 'COMPLAINT' | 'OTHER'
+export type FollowUpStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
 
 export const UserRole = {
   ADMIN: 'ADMIN' as const,
@@ -27,4 +28,10 @@ export const ReviewCategory = {
   PLATFORM_ERROR: 'PLATFORM_ERROR' as const,
   COMPLAINT: 'COMPLAINT' as const,
   OTHER: 'OTHER' as const,
+}
+export const FollowUpStatus = {
+  OPEN: 'OPEN' as const,
+  IN_PROGRESS: 'IN_PROGRESS' as const,
+  RESOLVED: 'RESOLVED' as const,
+  CLOSED: 'CLOSED' as const,
 }

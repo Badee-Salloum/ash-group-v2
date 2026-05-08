@@ -4,6 +4,7 @@ import { CheckCircle, Clock, AlertTriangle, XCircle, ArrowUpRight, ArrowDownRigh
 import { DashboardModal } from './_components/DashboardModal'
 import { Tx, AccountSummary, Stats, MetricAction, CategoryKind } from './_components/types'
 import { loadCategoryTransactions, loadMetricTransactions, METRIC_TITLES } from './_components/detailsLoader'
+import { FollowUpStatsWidget } from '../follow-ups/_components/FollowUpStatsWidget'
 
 function fmt(n: number) { return n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
@@ -161,6 +162,9 @@ export default function DashboardPage() {
         </div>
 
       </div>
+
+      {/* Follow-up workflow widget */}
+      <FollowUpStatsWidget mode="global" />
 
       {/* Per-currency profit cards - hidden for restricted */}
       {!restricted && (() => {

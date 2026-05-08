@@ -64,6 +64,8 @@ model User {
   bonusLogs         BonusLog[]          @relation("BonusRecipient")
   bonusesGiven      BonusLog[]          @relation("BonusCreator")
   handledTransactions Transaction[]     @relation("TransactionHandler")
+  // Phase 3 — Module: customer-facing follow-ups (complaints, customer/platform errors)
+  followUpAssignments Transaction[]     @relation("FollowUpAssignee")
   // Phase 3 — custom roles
   customRoles     UserRoleAssignment[]  @relation("UserCustomRoles")
 
@@ -172,6 +174,15 @@ enum ReviewCategory {
   OTHER          // غير ذلك
 }
 
+// Follow-up workflow for customer-facing reviewed operations
+// (auto-opened when reviewCategory ∈ {COMPLAINT, CUSTOMER_ERROR, PLATFORM_ERROR}).
+enum FollowUpStatus {
+  OPEN          // مفتوحة — تنتظر إجراء
+  IN_PROGRESS   // قيد المعالجة — تواصل/تحقيق جارٍ
+  RESOLVED      // تم الحل — اتُّخذ إجراء (تصحيح / استرجاع / إغلاق إيجابي)
+  CLOSED        // مُغلقة بلا حل — لم يردّ الزبون / لم تُجدِ المتابعة
+}
+
 model Transaction {
   id             String            @id @default(cuid())
   account        Account           @relation(fields: [accountId], references: [id])
@@ -198,6 +209,13 @@ model Transaction {
   reviewNotes    String?
   reviewedBy     String?
   reviewedAt     DateTime?
+  // Phase 3 — Follow-up layer (set when reviewCategory ∈ COMPLAINT/CUSTOMER_ERROR/PLATFORM_ERROR)
+  followUpStatus     FollowUpStatus?
+  followUpAssignedTo String?
+  followUpAssignee   User?           @relation("FollowUpAssignee", fields: [followUpAssignedTo], references: [id])
+  followUpResolution String?
+  followUpResolvedAt DateTime?
+  followUpResolvedBy String?
   // Phase 2 — Module D: link to handling employee
   handledByUserId    String?
   handledByUser      User?         @relation("TransactionHandler", fields: [handledByUserId], references: [id])
@@ -213,6 +231,8 @@ model Transaction {
   @@index([platformUserId])
   @@index([txDateTime])
   @@index([handledByUserId])
+  @@index([followUpStatus])
+  @@index([followUpAssignedTo, followUpStatus])
   @@map("transactions")
 }
 

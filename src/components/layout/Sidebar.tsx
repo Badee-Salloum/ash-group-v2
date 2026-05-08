@@ -7,6 +7,7 @@ import {
   LayoutDashboard, ArrowLeftRight, TrendingUp, Wallet,
   Users, Settings, Building2, Upload, History, X, Layers, UserCircle,
   Briefcase, Clock, Calendar, DollarSign, LayoutGrid, FileSpreadsheet, ChevronDown, Sparkles, UserPlus,
+  MessageSquareWarning,
 } from 'lucide-react'
 
 interface NavItem {
@@ -34,9 +35,10 @@ const SECTIONS: NavSection[] = [
   {
     title: 'العمليات المالية',
     items: [
-      { href: '/reconciliation', label: 'المطابقة',  icon: <ArrowLeftRight size={18} />, roles: [UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNT_MGR] },
-      { href: '/profits',        label: 'الأرباح',    icon: <TrendingUp size={18} />,     roles: [UserRole.ADMIN] },
-      { href: '/expenses',       label: 'الصرفيات',   icon: <Wallet size={18} />,         roles: [UserRole.ADMIN] },
+      { href: '/reconciliation', label: 'المطابقة',  icon: <ArrowLeftRight size={18} />,         roles: [UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNT_MGR] },
+      { href: '/follow-ups',     label: 'المتابعات',  icon: <MessageSquareWarning size={18} />,   roles: [UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNT_MGR] },
+      { href: '/profits',        label: 'الأرباح',    icon: <TrendingUp size={18} />,             roles: [UserRole.ADMIN] },
+      { href: '/expenses',       label: 'الصرفيات',   icon: <Wallet size={18} />,                 roles: [UserRole.ADMIN] },
     ],
   },
   {

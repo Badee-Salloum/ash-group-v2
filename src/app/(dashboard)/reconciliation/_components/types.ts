@@ -1,6 +1,7 @@
 export type TxStatus = 'MATCHED' | 'PENDING_SC' | 'PENDING_P' | 'DISCREPANCY' | 'WASTE'
 export type TxType = 'DEPOSIT' | 'WITHDRAWAL'
 export type ReviewCat = 'THEFT' | 'WASTE' | 'EXTRA' | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR' | 'COMPLAINT' | 'OTHER'
+export type FollowUpStat = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
 
 export const REVIEW_LABELS: Record<ReviewCat, string> = {
   THEFT: 'سرقة',
@@ -57,6 +58,7 @@ export interface Transaction {
   reviewNotes: string | null
   reviewedBy: string | null
   reviewedAt: string | null
+  followUpStatus: FollowUpStat | null
 }
 
 export interface Filters {

@@ -131,20 +131,36 @@ export async function PUT(req: NextRequest) {
     if (data.notes !== undefined) updateData.notes = data.notes
 
     // ── Review fields ──
-    // reviewCategory === 'NONE' → clear all review fields (undo review)
-    // any other value → set category + reviewedBy = current user + reviewedAt = now
+    // reviewCategory === 'NONE' → clear all review fields (undo review) + clear follow-up
+    // any other value → set category + reviewedBy = current user + reviewedAt = now;
+    //                   auto-open a follow-up if the category is customer-facing
+    //                   (COMPLAINT / CUSTOMER_ERROR / PLATFORM_ERROR) and none exists yet.
     let reviewAction: 'set' | 'clear' | null = null
     if (data.reviewCategory === 'NONE') {
       updateData.reviewCategory = null
       updateData.reviewNotes = null
       updateData.reviewedBy = null
       updateData.reviewedAt = null
+      // The follow-up is owned by the review — undoing the review undoes its follow-up too.
+      updateData.followUpStatus = null
+      updateData.followUpAssignedTo = null
+      updateData.followUpResolution = null
+      updateData.followUpResolvedAt = null
+      updateData.followUpResolvedBy = null
       reviewAction = 'clear'
     } else if (data.reviewCategory !== undefined) {
       updateData.reviewCategory = data.reviewCategory
       updateData.reviewedBy = session.userId
       updateData.reviewedAt = new Date()
       if (data.reviewNotes !== undefined) updateData.reviewNotes = data.reviewNotes
+      const isCustomerFacing =
+        data.reviewCategory === 'COMPLAINT' ||
+        data.reviewCategory === 'CUSTOMER_ERROR' ||
+        data.reviewCategory === 'PLATFORM_ERROR'
+      const existingFollowUp = (existing as unknown as { followUpStatus?: string | null }).followUpStatus ?? null
+      if (isCustomerFacing && !existingFollowUp) {
+        updateData.followUpStatus = 'OPEN'
+      }
       reviewAction = 'set'
     } else if (data.reviewNotes !== undefined) {
       // notes-only edit (already reviewed, changing explanation)
