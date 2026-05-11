@@ -1,5 +1,6 @@
 import { db } from '@/lib/db/client'
 import { TransactionSource } from '@/lib/db/prisma-types'
+import { categorizeExisting, pruneOrphanPairs, prunePairs } from './dedupeLogic'
 
 // ── Deduplicate against existing DB rows ──
 // Avoid re-inserting operations that were added by a previous upload.
@@ -57,26 +58,16 @@ export async function dedupAgainstExisting(
   // new (presumably MATCHED) records can take their place.
   type ExSc = { id: string; shamCashTxId: string | null; status: string; matchedTxId: string | null }
   type ExPl = { id: string; platformTxId: string | null; status: string; matchedTxId: string | null }
-  const scStaleIds: string[] = []
-  const plStaleIds: string[] = []
-  const existingScSet = new Set<string>()
-  const existingPSet = new Set<string>()
-  for (const r of (existingSC as ExSc[])) {
-    if (!r.shamCashTxId) continue
-    if (r.status === 'PENDING_SC' || r.status === 'PENDING_P') {
-      scStaleIds.push(r.id)
-    } else {
-      existingScSet.add(r.shamCashTxId)
-    }
-  }
-  for (const r of (existingP as ExPl[])) {
-    if (!r.platformTxId) continue
-    if (r.status === 'PENDING_SC' || r.status === 'PENDING_P') {
-      plStaleIds.push(r.id)
-    } else {
-      existingPSet.add(r.platformTxId)
-    }
-  }
+  const scResult = categorizeExisting(
+    (existingSC as ExSc[]).map(r => ({ id: r.id, status: r.status, idKey: r.shamCashTxId })),
+  )
+  const plResult = categorizeExisting(
+    (existingP as ExPl[]).map(r => ({ id: r.id, status: r.status, idKey: r.platformTxId })),
+  )
+  const scStaleIds = scResult.staleIds
+  const plStaleIds = plResult.staleIds
+  const existingScSet = scResult.keptKeys
+  const existingPSet = plResult.keptKeys
 
   // Delete stale PENDING rows (and any existing matched partner) so the
   // refreshed records can be inserted cleanly.
@@ -106,15 +97,9 @@ export async function dedupAgainstExisting(
     })
     // If one side of a matched pair was dropped, drop the other too so we
     // don't leave an orphan MATCHED row pointing at nothing.
-    const finalRecords = kept.filter(r => {
-      const pair = matchedPairs.find(p => p[0] === r.id || p[1] === r.id)
-      if (!pair) return true
-      return !droppedIds.has(pair[0]) && !droppedIds.has(pair[1])
-    })
-    // Also prune matchedPairs whose partners were dropped
-    const finalPairs = matchedPairs.filter(p =>
-      !droppedIds.has(p[0]) && !droppedIds.has(p[1])
-    )
+    const keptWithIds = kept.map(r => ({ ...(r as object), id: String((r as { id: unknown }).id) })) as Array<{ id: string }>
+    const finalRecords = pruneOrphanPairs(keptWithIds, droppedIds, matchedPairs)
+    const finalPairs = prunePairs(matchedPairs, droppedIds)
     matchedPairs.length = 0
     for (const p of finalPairs) matchedPairs.push(p)
 

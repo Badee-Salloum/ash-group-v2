@@ -91,6 +91,25 @@ Run all tests: `npx vitest run`
 | 5.10 | ✅ | empty walletIdentifier string is ignored |
 | 5.11 | ⏳ | tolerant to "عبد لله" vs "عبد الله" via Unicode normalization |
 
+## 5b. Auth — Signup (`tests/auth.signup.test.ts`)
+
+POST `/api/auth/signup` accepts `{ name, email, password }`. New accounts are created inactive and must be activated by an admin before they can log in.
+
+| # | Status | Test | Why it matters |
+|---|---|---|---|
+| 5b.1 | ✅ | rejects short name (<2 chars) with Arabic error | Schema validation |
+| 5b.2 | ✅ | rejects invalid email | Schema validation |
+| 5b.3 | ✅ | rejects short password (<8 chars) | Schema validation |
+| 5b.4 | ✅ | rejects missing fields | Schema validation |
+| 5b.5 | ✅ | returns 409 when email already registered | Duplicate guard |
+| 5b.6 | ✅ | happy path creates user with isActive=false, role=EMPLOYEE | Activation-required policy |
+| 5b.7 | ✅ | passwordHash matches bcrypt signature (never plaintext) | Security |
+| 5b.8 | ✅ | name is trimmed, email is lower-cased | Normalization |
+| 5b.9 | ✅ | duplicate check uses lower-cased email | Case-insensitive uniqueness |
+| 5b.10 | ✅ | returns 429 with Arabic retry message when rate-limited | Brute-force protection |
+| 5b.11 | ✅ | rate limit key includes client IP | IP scoping |
+| 5b.12 | ⏳ | login refuses inactive accounts with helpful message (integration) | End-to-end activation flow |
+
 ## 6. Permissions (`tests/permissions.test.ts`)
 
 | # | Status | Test |
@@ -172,18 +191,24 @@ Run all tests: `npx vitest run`
 
 ## 11. Dedupe (`tests/dedupe.test.ts`)
 
+Tests now import directly from `@/lib/reconciliation/dedupeLogic` so a regression in the production code surfaces here (previously the test file duplicated the logic locally — silent drift was possible).
+
 | # | Status | Test |
 |---|---|---|
 | 11.1 | ✅ | PENDING_SC categorized as stale |
 | 11.2 | ✅ | PENDING_P categorized as stale |
 | 11.3 | ✅ | MATCHED categorized as kept (drop new) |
 | 11.4 | ✅ | DISCREPANCY/WASTE categorized as kept |
-| 11.5 | ✅ | mixed batch routes to correct buckets |
-| 11.6 | ✅ | orphan-pair pruning: keep both pair partners when intact |
-| 11.7 | ✅ | orphan-pair pruning: drop both when one is dropped |
-| 11.8 | ✅ | unpaired records unaffected by drop set |
-| 11.9 | ✅ | multiple pairs handled independently |
-| 11.10 | ⏳ | matchedTxId cleared before stale delete (FK safety, integration) |
+| 11.5 | ✅ | rows with null idKey are skipped (defensive) |
+| 11.6 | ✅ | mixed batch routes to correct buckets |
+| 11.7 | ✅ | orphan-pair pruning: keep both pair partners when intact |
+| 11.8 | ✅ | orphan-pair pruning: drop both when one is dropped |
+| 11.9 | ✅ | unpaired records unaffected by drop set |
+| 11.10 | ✅ | multiple pairs handled independently |
+| 11.11 | ✅ | prunePairs: drops pair when either id dropped |
+| 11.12 | ✅ | prunePairs: keeps untouched pairs |
+| 11.13 | ✅ | prunePairs: returns empty when both dropped |
+| 11.14 | ⏳ | matchedTxId cleared before stale delete (FK safety, integration) |
 
 ## 12. Historical match endpoints (`tests/historical.test.ts` + `historical.platform.test.ts`)
 

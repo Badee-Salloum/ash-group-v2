@@ -1,97 +1,81 @@
 import { describe, it, expect } from 'vitest'
+import {
+  categorizeExisting,
+  pruneOrphanPairs,
+  prunePairs,
+} from '@/lib/reconciliation/dedupeLogic'
 
-// Pure decision logic extracted from batchProcessor.persist.ts dedupe.
-// Splits incoming existing rows into 'stale' (PENDING, will be deleted) and
-// 'kept' (MATCHED/etc, the new record should be dropped).
+// These tests pin the dedupe decision logic that gates whether an incoming
+// upload row replaces an existing DB row or is dropped as a duplicate. The
+// logic lives in `src/lib/reconciliation/dedupeLogic.ts` and is consumed by
+// `batchProcessor.persist.ts` — so a regression in production code shows up
+// here.
 
-interface ExistingRow {
-  id: string
-  status: string
-}
-
-function categorize(rows: ExistingRow[]): { stale: string[]; keptStatuses: string[] } {
-  const stale: string[] = []
-  const keptStatuses: string[] = []
-  for (const r of rows) {
-    if (r.status === 'PENDING_SC' || r.status === 'PENDING_P') {
-      stale.push(r.id)
-    } else {
-      keptStatuses.push(r.status)
-    }
-  }
-  return { stale, keptStatuses }
-}
-
-// Pair logic: when a record is dropped, its matched-pair partner must also be
-// dropped to avoid orphan MATCHED rows pointing at nothing.
-function dropOrphanPairs<T extends { id: string }>(
-  records: T[],
-  droppedIds: Set<string>,
-  matchedPairs: Array<[string, string]>,
-): T[] {
-  return records.filter(r => {
-    const pair = matchedPairs.find(p => p[0] === r.id || p[1] === r.id)
-    if (!pair) return true
-    return !droppedIds.has(pair[0]) && !droppedIds.has(pair[1])
-  })
-}
-
-describe('dedupe — categorization', () => {
+describe('categorizeExisting', () => {
   it('PENDING_SC → stale', () => {
-    const r = categorize([{ id: '1', status: 'PENDING_SC' }])
-    expect(r.stale).toEqual(['1'])
-    expect(r.keptStatuses.length).toBe(0)
+    const r = categorizeExisting([{ id: '1', status: 'PENDING_SC', idKey: 'tx1' }])
+    expect(r.staleIds).toEqual(['1'])
+    expect(r.keptKeys.size).toBe(0)
   })
 
   it('PENDING_P → stale', () => {
-    const r = categorize([{ id: '2', status: 'PENDING_P' }])
-    expect(r.stale).toEqual(['2'])
+    const r = categorizeExisting([{ id: '2', status: 'PENDING_P', idKey: 'tx2' }])
+    expect(r.staleIds).toEqual(['2'])
   })
 
   it('MATCHED → kept (drop new)', () => {
-    const r = categorize([{ id: '3', status: 'MATCHED' }])
-    expect(r.stale.length).toBe(0)
-    expect(r.keptStatuses).toEqual(['MATCHED'])
+    const r = categorizeExisting([{ id: '3', status: 'MATCHED', idKey: 'tx3' }])
+    expect(r.staleIds.length).toBe(0)
+    expect([...r.keptKeys]).toEqual(['tx3'])
   })
 
   it('DISCREPANCY → kept', () => {
-    const r = categorize([{ id: '4', status: 'DISCREPANCY' }])
-    expect(r.keptStatuses).toEqual(['DISCREPANCY'])
+    const r = categorizeExisting([{ id: '4', status: 'DISCREPANCY', idKey: 'tx4' }])
+    expect([...r.keptKeys]).toEqual(['tx4'])
   })
 
   it('WASTE → kept', () => {
-    const r = categorize([{ id: '5', status: 'WASTE' }])
-    expect(r.keptStatuses).toEqual(['WASTE'])
+    const r = categorizeExisting([{ id: '5', status: 'WASTE', idKey: 'tx5' }])
+    expect([...r.keptKeys]).toEqual(['tx5'])
+  })
+
+  it('rows with null idKey are skipped entirely', () => {
+    const r = categorizeExisting([
+      { id: '6', status: 'MATCHED', idKey: null },
+      { id: '7', status: 'PENDING_SC', idKey: null },
+    ])
+    expect(r.staleIds.length).toBe(0)
+    expect(r.keptKeys.size).toBe(0)
   })
 
   it('mixed batch routes correctly', () => {
-    const r = categorize([
-      { id: 'a', status: 'PENDING_SC' },
-      { id: 'b', status: 'MATCHED' },
-      { id: 'c', status: 'PENDING_P' },
-      { id: 'd', status: 'DISCREPANCY' },
+    const r = categorizeExisting([
+      { id: 'a', status: 'PENDING_SC', idKey: 'kA' },
+      { id: 'b', status: 'MATCHED', idKey: 'kB' },
+      { id: 'c', status: 'PENDING_P', idKey: 'kC' },
+      { id: 'd', status: 'DISCREPANCY', idKey: 'kD' },
     ])
-    expect(r.stale.sort()).toEqual(['a', 'c'])
-    expect(r.keptStatuses.sort()).toEqual(['DISCREPANCY', 'MATCHED'])
+    expect(r.staleIds.sort()).toEqual(['a', 'c'])
+    expect([...r.keptKeys].sort()).toEqual(['kB', 'kD'])
   })
 })
 
-describe('dedupe — orphan pair pruning', () => {
+describe('pruneOrphanPairs', () => {
   it('keeps records whose pair partners are both intact', () => {
     const recs = [{ id: 'sc1' }, { id: 'pl1' }]
-    const out = dropOrphanPairs(recs, new Set(), [['sc1', 'pl1']])
+    const out = pruneOrphanPairs(recs, new Set(), [['sc1', 'pl1']])
     expect(out.length).toBe(2)
   })
 
   it('drops both pair partners when one is dropped', () => {
     const recs = [{ id: 'sc1' }, { id: 'pl1' }]
-    const out = dropOrphanPairs(recs, new Set(['sc1']), [['sc1', 'pl1']])
+    const out = pruneOrphanPairs(recs, new Set(['sc1']), [['sc1', 'pl1']])
     expect(out.length).toBe(0)
   })
 
   it('keeps unpaired records regardless of dropped set', () => {
     const recs = [{ id: 'lonely' }]
-    const out = dropOrphanPairs(recs, new Set(['something-else']), [])
+    const out = pruneOrphanPairs(recs, new Set(['something-else']), [])
     expect(out).toEqual([{ id: 'lonely' }])
   })
 
@@ -100,10 +84,30 @@ describe('dedupe — orphan pair pruning', () => {
       { id: 'sc1' }, { id: 'pl1' },   // pair A — both kept
       { id: 'sc2' }, { id: 'pl2' },   // pair B — sc2 dropped → both gone
     ]
-    const out = dropOrphanPairs(recs, new Set(['sc2']), [
+    const out = pruneOrphanPairs(recs, new Set(['sc2']), [
       ['sc1', 'pl1'],
       ['sc2', 'pl2'],
     ])
     expect(out.map(r => r.id).sort()).toEqual(['pl1', 'sc1'])
+  })
+})
+
+describe('prunePairs', () => {
+  it('drops pairs where either id was dropped', () => {
+    const out = prunePairs(
+      [['a', 'b'], ['c', 'd']],
+      new Set(['a']),
+    )
+    expect(out).toEqual([['c', 'd']])
+  })
+
+  it('keeps pairs untouched by drop set', () => {
+    const out = prunePairs([['a', 'b']], new Set(['z']))
+    expect(out).toEqual([['a', 'b']])
+  })
+
+  it('returns empty when both partners dropped', () => {
+    const out = prunePairs([['a', 'b']], new Set(['a', 'b']))
+    expect(out).toEqual([])
   })
 })
