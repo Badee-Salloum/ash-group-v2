@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { rateLimit } from '@/lib/rateLimit'
+import { hashPassword, validatePasswordStrength, getClientIp } from '@/lib/auth'
 
 // Signup collects name + email + password. Accounts are created inactive
 // (`isActive: false`) and cannot log in until an administrator activates
-// them and assigns the appropriate role. Email is unique per the schema.
+// them and assigns the appropriate role. Email is unique per the schema and
+// stored lower-cased so login lookups are case-insensitive.
+//
+// Password strength uses the same policy as administrative password resets
+// (validatePasswordStrength) and the hash uses 12 bcrypt rounds via the
+// shared hashPassword helper — both must stay in lock-step with the rest of
+// the auth surface.
 
 const signupSchema = z.object({
   name: z
@@ -20,15 +26,12 @@ const signupSchema = z.object({
     .toLowerCase()
     .email('البريد الإلكتروني غير صالح')
     .max(160),
-  password: z
-    .string()
-    .min(8, 'كلمة المرور يجب أن تكون 8 أحرف على الأقل')
-    .max(128),
+  password: z.string().max(128),
 })
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') || req.ip || 'unknown'
+    const ip = getClientIp(req)
 
     // Rate limit: 5 signup attempts per hour per IP
     const rl = rateLimit(`signup:${ip}`, { limit: 5, windowMs: 60 * 60_000 })
@@ -45,8 +48,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { name, email, password } = signupSchema.parse(body)
 
-    // Reject if email already used. Returns a generic message either way to
-    // avoid leaking which emails are registered.
+    // Enforce the same password-strength rules as the rest of the platform.
+    const strength = validatePasswordStrength(password)
+    if (!strength.valid) {
+      return NextResponse.json(
+        { success: false, error: strength.message || 'كلمة المرور ضعيفة' },
+        { status: 400 },
+      )
+    }
+
+    // Reject if email already used. Returns a clear message; signup is
+    // gated behind admin activation so this disclosure does not weaken the
+    // login surface.
     const existing = await db.user.findUnique({
       where: { email },
       select: { id: true },
@@ -58,18 +71,34 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const passwordHash = await bcrypt.hash(password, 10)
+    const passwordHash = await hashPassword(password)
 
-    await db.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-        role: 'EMPLOYEE',
-        isActive: false,
-      },
-      select: { id: true },
-    })
+    try {
+      await db.user.create({
+        data: {
+          name,
+          email,
+          passwordHash,
+          role: 'EMPLOYEE',
+          isActive: false,
+        },
+        select: { id: true },
+      })
+    } catch (e: unknown) {
+      // P2002 = Prisma unique-constraint violation. Two concurrent signups
+      // with the same email pass the existence check; the second one fails
+      // here. Convert to the same 409 the caller would have received.
+      if (
+        typeof e === 'object' && e !== null &&
+        'code' in e && (e as { code: unknown }).code === 'P2002'
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'هذا البريد مسجّل مسبقاً. تواصل مع الإدارة إذا كنت تعتقد أن هذا خطأ.' },
+          { status: 409 },
+        )
+      }
+      throw e
+    }
 
     return NextResponse.json({
       success: true,

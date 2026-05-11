@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { loginUser } from '@/lib/auth'
+import { loginUser, getClientIp } from '@/lib/auth'
 import { rateLimit } from '@/lib/rateLimit'
 import { z } from 'zod'
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email(),
   password: z.string().min(1),
 })
 
@@ -12,11 +12,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { email, password } = loginSchema.parse(body)
-    const ip = req.headers.get('x-forwarded-for') || req.ip || 'unknown'
+    const ip = getClientIp(req)
 
     // Rate limit: 10 attempts per 5 min per IP+email pair (defence-in-depth
     // alongside the per-account lockout in loginUser).
-    const rl = rateLimit(`login:${ip}:${email.toLowerCase()}`, { limit: 10, windowMs: 5 * 60_000 })
+    const rl = rateLimit(`login:${ip}:${email}`, { limit: 10, windowMs: 5 * 60_000 })
     if (!rl.ok) {
       return NextResponse.json(
         { success: false, error: `محاولات كثيرة. حاول بعد ${Math.ceil(rl.resetInMs / 1000)} ثانية.` },

@@ -91,8 +91,20 @@ export function validatePasswordStrength(password: string): { valid: boolean; me
 
 // ─── Login ───────────────────────────────────────────────────────────────────
 
+// Extract the real client IP from x-forwarded-for. Vercel/most proxies prepend
+// the originating client and append intermediate hops, so the first entry is
+// the one we want for rate-limit and audit purposes.
+export function getClientIp(req: { headers: { get: (k: string) => string | null } }): string {
+  const xff = req.headers.get('x-forwarded-for') || ''
+  const first = xff.split(',')[0]?.trim()
+  return first || 'unknown'
+}
+
 export async function loginUser(email: string, password: string, ip?: string) {
-  const user = await db.user.findUnique({ where: { email } })
+  // Normalize email — accounts are stored lower-cased, so login lookups must
+  // match regardless of what the user typed.
+  const normalizedEmail = email.trim().toLowerCase()
+  const user = await db.user.findUnique({ where: { email: normalizedEmail } })
 
   if (!user || !user.isActive) {
     return { success: false, error: 'بيانات الدخول غير صحيحة' }

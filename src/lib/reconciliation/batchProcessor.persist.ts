@@ -97,8 +97,11 @@ export async function dedupAgainstExisting(
     })
     // If one side of a matched pair was dropped, drop the other too so we
     // don't leave an orphan MATCHED row pointing at nothing.
-    const keptWithIds = kept.map(r => ({ ...(r as object), id: String((r as { id: unknown }).id) })) as Array<{ id: string }>
-    const finalRecords = pruneOrphanPairs(keptWithIds, droppedIds, matchedPairs)
+    const finalRecords = pruneOrphanPairs(
+      kept as Array<{ id: string } & Record<string, unknown>>,
+      droppedIds,
+      matchedPairs,
+    )
     const finalPairs = prunePairs(matchedPairs, droppedIds)
     matchedPairs.length = 0
     for (const p of finalPairs) matchedPairs.push(p)

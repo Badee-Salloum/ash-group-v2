@@ -39,7 +39,7 @@ beforeEach(() => {
 describe('POST /api/auth/signup — validation', () => {
   it('rejects short name', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const res = await POST(makeRequest({ name: 'A', email: 'a@b.co', password: 'longenough1' }) as any)
+    const res = await POST(makeRequest({ name: 'A', email: 'a@b.co', password: 'LongEnough1' }) as any)
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.success).toBe(false)
@@ -49,7 +49,7 @@ describe('POST /api/auth/signup — validation', () => {
 
   it('rejects invalid email', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const res = await POST(makeRequest({ name: 'Ahmed', email: 'not-an-email', password: 'longenough1' }) as any)
+    const res = await POST(makeRequest({ name: 'Ahmed', email: 'not-an-email', password: 'LongEnough1' }) as any)
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toMatch(/البريد/)
@@ -57,10 +57,26 @@ describe('POST /api/auth/signup — validation', () => {
 
   it('rejects short password', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const res = await POST(makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'short' }) as any)
+    const res = await POST(makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'Sh0rt' }) as any)
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toMatch(/8 أحرف/)
+  })
+
+  it('rejects password missing uppercase', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'lowercase1' }) as any)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toMatch(/كبير/)
+  })
+
+  it('rejects password missing digit', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'NoDigitsHere' }) as any)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toMatch(/رقم/)
   })
 
   it('rejects missing fields', async () => {
@@ -75,13 +91,28 @@ describe('POST /api/auth/signup — duplicate email', () => {
     findUniqueMock.mockResolvedValueOnce({ id: 'existing-user-id' })
     const res = await POST(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      makeRequest({ name: 'Ahmed', email: 'taken@co.com', password: 'longenough1' }) as any,
+      makeRequest({ name: 'Ahmed', email: 'taken@co.com', password: 'LongEnough1' }) as any,
     )
     expect(res.status).toBe(409)
     const body = await res.json()
     expect(body.success).toBe(false)
     expect(body.error).toMatch(/مسجّل مسبقاً/)
     expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('converts a Prisma P2002 race into a 409 (not 500)', async () => {
+    // Two concurrent signups for the same email: both pass findUnique, the
+    // second hits the unique constraint at insert time.
+    findUniqueMock.mockResolvedValueOnce(null)
+    const p2002 = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+    createMock.mockRejectedValueOnce(p2002)
+    const res = await POST(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeRequest({ name: 'Ahmed', email: 'race@co.com', password: 'LongEnough1' }) as any,
+    )
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error).toMatch(/مسجّل مسبقاً/)
   })
 })
 
@@ -92,7 +123,7 @@ describe('POST /api/auth/signup — happy path', () => {
 
     const res = await POST(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      makeRequest({ name: '  Ahmed Ali  ', email: 'Ahmed@Co.com', password: 'longenough1' }) as any,
+      makeRequest({ name: '  Ahmed Ali  ', email: 'Ahmed@Co.com', password: 'LongEnough1' }) as any,
     )
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -106,7 +137,7 @@ describe('POST /api/auth/signup — happy path', () => {
     // email is lower-cased
     expect(args.data.email).toBe('ahmed@co.com')
     // password is hashed (not stored as plaintext)
-    expect(args.data.passwordHash).not.toBe('longenough1')
+    expect(args.data.passwordHash).not.toBe('LongEnough1')
     expect(args.data.passwordHash).toMatch(/^\$2[aby]\$/) // bcrypt signature
     // role + active state are forced
     expect(args.data.role).toBe('EMPLOYEE')
@@ -119,7 +150,7 @@ describe('POST /api/auth/signup — happy path', () => {
 
     await POST(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      makeRequest({ name: 'Sara', email: 'SARA@CO.COM', password: 'longenough1' }) as any,
+      makeRequest({ name: 'Sara', email: 'SARA@CO.COM', password: 'LongEnough1' }) as any,
     )
     const findArgs = findUniqueMock.mock.calls[0][0]
     expect(findArgs.where.email).toBe('sara@co.com')
@@ -131,7 +162,7 @@ describe('POST /api/auth/signup — rate limit', () => {
     rateLimitMock.mockReturnValueOnce({ ok: false, remaining: 0, resetInMs: 120_000 })
     const res = await POST(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'longenough1' }) as any,
+      makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'LongEnough1' }) as any,
     )
     expect(res.status).toBe(429)
     const body = await res.json()
@@ -148,7 +179,7 @@ describe('POST /api/auth/signup — rate limit', () => {
     createMock.mockResolvedValueOnce({ id: 'u' })
     await POST(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'longenough1' }) as any,
+      makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'LongEnough1' }) as any,
     )
     expect(rateLimitMock).toHaveBeenCalled()
     const key = rateLimitMock.mock.calls[0][0] as string
