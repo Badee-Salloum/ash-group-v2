@@ -5,13 +5,17 @@ import Link from 'next/link'
 import DataTable, { Column } from '@/components/tables/DataTable'
 import { fmtSyria } from '@/lib/datetime'
 import { ArrowRight, TrendingUp, TrendingDown, Shield, AlertTriangle, User, Fingerprint } from 'lucide-react'
+import TransactionRowActions, {
+  type TransactionStatus,
+  type ReviewCategory,
+} from '@/components/forms/TransactionRowActions'
 
 interface TxRow extends Record<string, unknown> {
   id: string
   accountId: string
   accountLabel: string
   type: string
-  status: string
+  status: TransactionStatus
   source: string
   amount: string
   currency: string
@@ -20,6 +24,9 @@ interface TxRow extends Record<string, unknown> {
   platformTxId: string | null
   platformUserId: string | null
   amountDiff: string | null
+  matchedTxId: string | null
+  reviewCategory: ReviewCategory
+  reviewNotes: string | null
   notes: string | null
   rawData: Record<string, unknown> | null
 }
@@ -38,13 +45,12 @@ export default function CustomerDetailPage() {
   const name = decodeURIComponent(params?.name || '')
   const [data, setData] = useState<TxRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [userRole, setUserRole] = useState<string>('')
 
   const load = useCallback(async () => {
     setLoading(true)
     const r = await fetch(`/api/customers/${encodeURIComponent(name)}`)
     const d = await r.json()
-    // If the server discovered a canonical name for this USER-<id> placeholder,
-    // jump to the proper customer page so the URL + heading reflect it.
     if (d.success && d.redirectName && d.redirectName !== name) {
       router.replace(`/customers/${encodeURIComponent(d.redirectName)}`)
       return
@@ -54,6 +60,15 @@ export default function CustomerDetailPage() {
   }, [name, router])
 
   useEffect(() => { load() }, [load])
+
+  // Fetch session role once so we can hide the actions menu for roles that
+  // can't mutate transactions (everyone below ACCOUNTANT).
+  useEffect(() => {
+    fetch('/api/me')
+      .then(r => r.json())
+      .then(d => { if (d?.role) setUserRole(d.role) })
+      .catch(() => undefined)
+  }, [])
 
   // Aggregate stats
   const depositTotal: Record<string, number> = {}
@@ -157,6 +172,28 @@ export default function CustomerDetailPage() {
         const txt = r.notes || String(raw?.notes || '') || ''
         return txt ? <span className="text-xs text-gray-500">{txt.slice(0, 50)}</span> : '—'
       },
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: r => (
+        <TransactionRowActions
+          row={{
+            id: r.id,
+            status: r.status,
+            type: r.type,
+            source: r.source,
+            amount: r.amount,
+            currency: r.currency,
+            matchedTxId: r.matchedTxId,
+            reviewCategory: r.reviewCategory,
+            reviewNotes: r.reviewNotes,
+            notes: r.notes,
+          }}
+          userRole={userRole}
+          onRefresh={load}
+        />
+      ),
     },
   ]
 

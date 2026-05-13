@@ -43,6 +43,7 @@ export default function SchedulePage() {
   const [shifts, setShifts] = useState<Shift[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [minPerShift, setMinPerShift] = useState(1)
+  const [defaultOffDays, setDefaultOffDays] = useState(1)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -95,7 +96,10 @@ export default function SchedulePage() {
   async function handleSuggest() {
     setLoading(true)
     const from = days[0].toISOString().slice(0, 10)
-    const r = await fetch(`/api/schedule?action=suggest&from=${from}&minPerShift=${minPerShift}`, { method: 'POST' })
+    const r = await fetch(
+      `/api/schedule?action=suggest&from=${from}&minPerShift=${minPerShift}&defaultOffDays=${defaultOffDays}`,
+      { method: 'POST' },
+    )
     const d = await r.json()
     if (d.success) {
       const tmp: Shift[] = d.data.map((s: { date: string; shiftNumber: 'ONE'|'TWO'|'THREE'; userId: string; isDayOff: boolean }, i: number) => ({
@@ -163,6 +167,11 @@ export default function SchedulePage() {
         <input type="number" min={1} max={20} value={minPerShift}
           onChange={e => setMinPerShift(Math.max(1, parseInt(e.target.value) || 1))}
           className="input w-20 py-1 text-sm" />
+        <span className="text-sm text-gray-600 ms-2">أيام العطلة الأسبوعية:</span>
+        <input type="number" min={0} max={3} value={defaultOffDays}
+          onChange={e => setDefaultOffDays(Math.max(0, Math.min(3, parseInt(e.target.value) || 0)))}
+          className="input w-20 py-1 text-sm" />
+        <span className="text-[11px] text-gray-400">(0–3، يُتجاوز بإعدادات الموظف الفردية)</span>
         <button onClick={handleSuggest} className="btn-secondary btn-sm">
           <Sparkles size={14} /> اقتراح تلقائي
         </button>
@@ -208,12 +217,31 @@ export default function SchedulePage() {
                   {days.map((d, i) => {
                     const dateStr = d.toISOString().slice(0, 10)
                     const list = getShifts(dateStr, sn)
+                    const offCount = list.filter(s => s.isDayOff).length
+                    const workingCount = list.length - offCount
                     return (
                       <td key={i} className="px-2 py-2 align-top">
                         <div className="space-y-1">
                           {list.map(s => (
-                            <div key={s.id} className="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 text-xs">
-                              <span className="flex-1 truncate font-medium">{s.user?.name || '?'}</span>
+                            <div
+                              key={s.id}
+                              className={`flex items-center gap-1 border rounded-lg px-2 py-1 text-xs ${
+                                s.isDayOff
+                                  ? 'bg-gray-100 border-gray-300 opacity-75'
+                                  : 'bg-blue-50 border-blue-200'
+                              }`}
+                              title={s.isDayOff ? 'في إجازة' : undefined}
+                            >
+                              <span
+                                className={`flex-1 truncate font-medium ${s.isDayOff ? 'line-through text-gray-500' : ''}`}
+                              >
+                                {s.user?.name || '?'}
+                              </span>
+                              {s.isDayOff && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                  إجازة
+                                </span>
+                              )}
                               <button onClick={() => remove(s.id)} className="text-red-500 hover:text-red-700">
                                 <Trash2 size={11} />
                               </button>
@@ -229,6 +257,11 @@ export default function SchedulePage() {
                               <option key={em.id} value={em.id}>{em.name}</option>
                             ))}
                           </select>
+                          {list.length > 0 && (
+                            <div className="text-[9px] text-gray-400 text-center mt-1 font-medium">
+                              عاملون: {workingCount} · إجازة: {offCount}
+                            </div>
+                          )}
                         </div>
                       </td>
                     )

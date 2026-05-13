@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession, requireRole, audit } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
+import { tryAutoApproveHandover } from '@/lib/shifts/autoApprove'
 import { z } from 'zod'
 
 // Module B: Shift sessions (Check-in/Check-out + handover).
@@ -51,108 +52,6 @@ export async function GET(req: NextRequest) {
   })
 
   return NextResponse.json({ success: true, data: sessions })
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Auto-approval helper. Tries to flip a PENDING_START handover to ACTIVE
-// when (a) wallet sets match between incoming/outgoing and (b) the incoming
-// employee is on the schedule for today's slot. Returns whether auto-approved
-// and a short reason on rejection — caller relays this to the client.
-async function tryAutoApproveHandover(incomingSessionId: string): Promise<{
-  approved: boolean
-  reason?: string
-}> {
-  const incoming = await db.shiftSession.findUnique({
-    where: { id: incomingSessionId },
-    include: { wallets: true },
-  })
-  if (!incoming || incoming.status !== 'PENDING_START') {
-    return { approved: false, reason: 'الجلسة ليست بانتظار الموافقة' }
-  }
-  if (!incoming.handoverFromUserId) {
-    return { approved: false, reason: 'لا يوجد تسليم لمطابقته' }
-  }
-  if (!incoming.shiftNumber) {
-    return { approved: false, reason: 'رقم المناوبة غير محدد — يلزم موافقة يدوية' }
-  }
-
-  // Find the matching outgoing PENDING_END session for the same handoff partner.
-  const outgoing = await db.shiftSession.findFirst({
-    where: { userId: incoming.handoverFromUserId, status: 'PENDING_END' },
-    include: { wallets: true },
-    orderBy: { startAt: 'desc' },
-  })
-  if (!outgoing) {
-    return { approved: false, reason: 'لا توجد جلسة سابقة بانتظار الإغلاق' }
-  }
-
-  // Wallet-set equality check (exact match, both directions).
-  const inSet = new Set(incoming.wallets.map((w: { accountId: string }) => w.accountId))
-  const outSet = new Set(outgoing.wallets.map((w: { accountId: string }) => w.accountId))
-  if (inSet.size !== outSet.size) {
-    return { approved: false, reason: 'عدد المحافظ المسلَّمة لا يطابق المستلَمة' }
-  }
-  for (const id of inSet) {
-    if (!outSet.has(id)) {
-      return { approved: false, reason: 'المحافظ المختارة لا تطابق المحافظ المسلَّمة' }
-    }
-  }
-
-  // Schedule check: incoming user must be scheduled today for this slot.
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-  const todayEnd = new Date(todayStart); todayEnd.setDate(todayStart.getDate() + 1)
-  const scheduled = await db.shift.findFirst({
-    where: {
-      userId: incoming.userId,
-      shiftNumber: incoming.shiftNumber,
-      date: { gte: todayStart, lt: todayEnd },
-      isDayOff: false,
-    },
-  })
-  if (!scheduled) {
-    return { approved: false, reason: 'الموظف غير مجدول لهذه المناوبة اليوم' }
-  }
-
-  // All checks passed — flip atomically (same logic as manual approveHandover).
-  const now = new Date()
-  try {
-    await db.$transaction(async (tx: typeof db) => {
-      const flipIncoming = await tx.shiftSession.updateMany({
-        where: { id: incoming.id, status: 'PENDING_START' },
-        data: {
-          status: 'ACTIVE',
-          startAt: now,
-          approvedById: null, // system-approved; differentiated by null + note
-          approvedAt: now,
-          notes: incoming.notes
-            ? `${incoming.notes} · موافقة تلقائية`
-            : 'موافقة تلقائية (مطابقة محافظ + جدول)',
-        },
-      })
-      if (flipIncoming.count === 0) {
-        throw new Error('race')
-      }
-      const duration = Math.round((now.getTime() - outgoing.startAt.getTime()) / 60000)
-      await tx.shiftSession.updateMany({
-        where: { id: outgoing.id, status: 'PENDING_END' },
-        data: {
-          status: 'COMPLETED',
-          endAt: now,
-          durationMinutes: duration,
-          approvedById: null,
-          approvedAt: now,
-        },
-      })
-    })
-  } catch {
-    return { approved: false, reason: 'لم يتم التحديث (تعارض متزامن)' }
-  }
-
-  await audit(incoming.userId, 'AUTO_APPROVE_HANDOVER', 'ShiftSession', incoming.id, {
-    outgoingSessionId: outgoing.id,
-    walletCount: inSet.size,
-  })
-  return { approved: true }
 }
 
 const checkinSchema = z.object({
@@ -246,13 +145,15 @@ export async function POST(req: NextRequest) {
       handover: !!data.handoverFromUserId,
     })
 
-    // Attempt auto-approval for handovers (silent if it fails — falls through
-    // to manual review). Only runs when this is a PENDING_START handover.
+    // Attempt auto-approval for handovers. If the outgoing employee hasn't
+    // requested end yet this returns { approved: false, reason: "في انتظار…" }
+    // — the session stays PENDING_START until the outgoing-side trigger fires
+    // from PATCH requestEnd (see below).
     let autoApproved = false
     let autoReason: string | undefined
     let finalStatus: string = created.status
     if (initialStatus === 'PENDING_START') {
-      const r = await tryAutoApproveHandover(created.id)
+      const r = await tryAutoApproveHandover({ incomingSessionId: created.id })
       autoApproved = r.approved
       autoReason = r.reason
       if (r.approved) finalStatus = 'ACTIVE'
@@ -299,7 +200,16 @@ export async function PATCH(req: NextRequest) {
         data: { status: 'PENDING_END' },
       })
       await audit(session.userId, 'REQUEST_END_SHIFT', 'ShiftSession', sessionId, {})
-      return NextResponse.json({ success: true })
+
+      // Mutual-handover trigger: if an incoming employee has already checked in
+      // and is parked in PENDING_START waiting for *this* user, the auto-approval
+      // can now fire from the outgoing side and complete both sessions.
+      const r = await tryAutoApproveHandover({ outgoingSessionId: sessionId })
+      return NextResponse.json({
+        success: true,
+        autoApproved: r.approved,
+        autoApprovalReason: r.reason,
+      })
     }
 
     if (action === 'approveHandover') {

@@ -264,7 +264,65 @@ Tests now import directly from `@/lib/reconciliation/dedupeLogic` so a regressio
 | 15.5 | ✅ | After windowMs elapses: bucket resets |
 | 15.6 | ⏳ | Sweep removes expired buckets after 60s |
 
-## 16. End-to-end batch processing
+## 16a. Schedule Generator (`tests/schedule.generator.test.ts`)
+
+Pure-logic tests for the weekly schedule generator that replaces naïve round-robin with shift-continuity + weekly off-days + deterministic rotation.
+
+| # | Status | Test | Why it matters |
+|---|---|---|---|
+| 16a.1 | ✅ | Each employee stays on the same shift number every day of the week | Continuity — no jumping between morning/evening/night |
+| 16a.2 | ✅ | Round-robin pins employees[0,1,2,3] to ONE/TWO/THREE/ONE | Deterministic shift assignment |
+| 16a.3 | ✅ | weeklyOffDays:2 marks exactly 2 days off per employee | Off-days respected when coverage allows |
+| 16a.4 | ✅ | weeklyOffDays:0 leaves nobody off | Edge case |
+| 16a.5 | ✅ | Off-day windows rotate so a shift is never fully empty | Cross-team rotation correctness |
+| 16a.6 | ✅ | `minPerShift` floor overrides weeklyOffDays when needed | Coverage SLA |
+| 16a.7 | ✅ | minPerShift:0 honors weeklyOffDays exactly | Negative case of the floor |
+| 16a.8 | ✅ | Same input twice produces byte-identical output | Determinism |
+| 16a.9 | ✅ | Caller order doesn't matter — internal sort by id | Stability |
+| 16a.10 | ✅ | Output is 7 × 3 × roster-size rows with correct YYYY-MM-DD dates | Output shape |
+
+## 16b. Reconciliation Unlink (`tests/reconciliation.unlink.test.ts`)
+
+| # | Status | Test |
+|---|---|---|
+| 16b.1 | ✅ | 401 when unauthenticated |
+| 16b.2 | ✅ | 403 when caller is not ADMIN or SUPERVISOR |
+| 16b.3 | ✅ | 404 when transaction missing |
+| 16b.4 | ✅ | 400 when transaction is in PENDING_* (nothing to unlink) |
+| 16b.5 | ✅ | 400 guard when MATCHED but matchedTxId is null (data corruption) |
+| 16b.6 | ✅ | Happy path returns both rows to PENDING_* + audits MANUAL_UNLINK |
+| 16b.7 | ✅ | Works on DISCREPANCY too (clears amountDiff) |
+| 16b.8 | ✅ | Defensive: proceeds even if partner row was already deleted |
+
+## 16c. Shift-Counterpart Lookup (`tests/shifts.counterpart.test.ts`)
+
+The check-in form auto-suggests the previous-shift employee based on which wallets the incoming user selects. This locks in that suggestion logic.
+
+| # | Status | Test |
+|---|---|---|
+| 16c.1 | ✅ | 400 when walletIds query param is missing |
+| 16c.2 | ✅ | Returns single counterpart when one session holds the requested wallets |
+| 16c.3 | ✅ | counterpart:null when no open session holds the wallets |
+| 16c.4 | ✅ | ambiguous:true + candidates list when multiple users hold them |
+| 16c.5 | ✅ | Excludes sessions that hold only a subset of requested wallets |
+| 16c.6 | ✅ | DB filter restricts to ACTIVE/PENDING_END statuses only |
+| 16c.7 | ✅ | 401 when unauthenticated |
+
+## 16d. Auto-Approve Handover — Integration (`tests/shifts.autoApprove.integration.test.ts`)
+
+Exercises the *real* `tryAutoApproveHandover()` from `src/lib/shifts/autoApprove.ts` with a mocked Prisma client. Complements the pure-logic gate test in `shifts.autoApprove.test.ts`.
+
+| # | Status | Test | Why it matters |
+|---|---|---|---|
+| 16d.1 | ✅ | Approves when triggered by incoming + both sides ready | Happy path, incoming trigger |
+| 16d.2 | ✅ | Returns "في انتظار تسجيل خروج…" when outgoing PENDING_END not yet posted | Waiting-state UX |
+| 16d.3 | ✅ | Rejects when wallet sets differ | Wallet equality guard |
+| 16d.4 | ✅ | Approves when triggered by outgoing after incoming already checked in | Mutual-handover (NEW) |
+| 16d.5 | ✅ | Returns "في انتظار تسجيل دخول…" when no incoming PENDING_START exists | Waiting-state UX (NEW) |
+| 16d.6 | ✅ | Rejects when the outgoing session is no longer PENDING_END | Status guard |
+| 16d.7 | ✅ | Returns "تعارض متزامن" when updateMany.count === 0 | Race safety |
+
+## 17. End-to-end batch processing
 
 `tests/e2e.batch.test.ts` (⏳ planned, needs test DB)
 

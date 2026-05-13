@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 
 // Pure logic mirror of the auto-approval pre-checks (wallet match + schedule
-// presence). The actual handler lives in src/app/api/shifts/sessions/route.ts;
-// here we re-implement the gate predicate to lock its semantics in place.
+// presence). The actual implementation now lives in src/lib/shifts/autoApprove.ts;
+// here we re-implement the gate predicate to lock its semantics in place. The
+// real function is exercised end-to-end with a mocked DB in
+// tests/shifts.autoApprove.integration.test.ts.
 
 interface SessionLite {
   id: string

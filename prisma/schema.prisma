@@ -43,9 +43,10 @@ model User {
   managerId       String?
   manager         User?     @relation("EmployeeHierarchy", fields: [managerId], references: [id])
   subordinates    User[]    @relation("EmployeeHierarchy")
-  // NOTE: weeklyOffDays column will be added once `npx prisma db push` runs
-  // against Neon. Until then, the field is omitted from the schema so SELECTs
-  // don't fail. Form code defaults to 1 day off when reading.
+  // Number of weekly off days the scheduler should grant this employee (1..3).
+  // The schedule generator distributes these days across the week so that
+  // different team members rotate through the same off-days.
+  weeklyOffDays   Int       @default(1)
 
   accountAccess AccountAccess[]
   auditLogs     AuditLog[]

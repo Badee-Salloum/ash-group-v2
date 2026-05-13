@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession, requireRole, audit } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
+import { generateWeeklySchedule, type Employee as GenEmployee } from '@/lib/schedule/generator'
 import { z } from 'zod'
 
 // Module E — Shift scheduling.
@@ -90,40 +91,39 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Auto-suggestion: distribute available employees across 3 shifts × 7 days
-// with fair rotation. Day off = excess employees marked isDayOff=true.
+// Auto-suggestion: delegate to the pure generator in src/lib/schedule. Only
+// front-line `EMPLOYEE`s are scheduled — managers/supervisors/account managers
+// are exempt from shift rotation by policy. Each employee is pinned to one
+// shift number for the week (continuity) and their `weeklyOffDays` are
+// rotated across the team so different people are off on different days.
 async function suggestSchedule(req: NextRequest) {
   const params = req.nextUrl.searchParams
   const from = params.get('from') ? new Date(params.get('from')!) : new Date()
   const minPerShift = Math.max(1, parseInt(params.get('minPerShift') || '1'))
+  const defaultOffDays = Math.max(0, Math.min(3, parseInt(params.get('defaultOffDays') || '1')))
 
-  // Fetch all available employees (role EMPLOYEE or MANAGER, active)
   const employees = await db.user.findMany({
-    where: {
-      isActive: true,
-      role: { in: ['EMPLOYEE', 'MANAGER', 'SUPERVISOR', 'ACCOUNT_MGR'] },
-    },
-    select: { id: true, name: true, jobTitle: true },
+    where: { isActive: true, role: 'EMPLOYEE' },
+    select: { id: true, name: true, jobTitle: true, weeklyOffDays: true },
   })
 
-  const shifts: Array<{ date: string; shiftNumber: 'ONE' | 'TWO' | 'THREE'; userId: string; isDayOff: boolean }> = []
+  const genInput: GenEmployee[] = employees.map((e: { id: string; weeklyOffDays: number | null }) => ({
+    id: e.id,
+    weeklyOffDays: e.weeklyOffDays ?? defaultOffDays,
+  }))
 
-  // Round-robin assignment
-  let cursor = 0
-  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-    const day = new Date(from.getTime() + dayOffset * 86400000)
-    const dateStr = day.toISOString().slice(0, 10)
-    for (const sn of ['ONE', 'TWO', 'THREE'] as const) {
-      for (let n = 0; n < minPerShift; n++) {
-        if (employees.length === 0) break
-        const emp = employees[cursor % employees.length]
-        cursor++
-        shifts.push({ date: dateStr, shiftNumber: sn, userId: emp.id, isDayOff: false })
-      }
-    }
-  }
+  const result = generateWeeklySchedule({
+    weekStart: from,
+    employees: genInput,
+    minPerShift,
+  })
 
-  return NextResponse.json({ success: true, data: shifts, employees: employees.length })
+  return NextResponse.json({
+    success: true,
+    data: result.shifts,
+    assignments: result.assignments,
+    employees: employees.length,
+  })
 }
 
 export async function DELETE(req: NextRequest) {

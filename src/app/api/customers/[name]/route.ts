@@ -79,7 +79,8 @@ export async function GET(
       const sql = `
         SELECT t.id, t."accountId", t.type, t.status, t.source, t.amount, t.currency,
                t."txDateTime", t."shamCashTxId", t."platformTxId", t."platformUserId",
-               t."amountDiff", t.notes, t."rawData", a.name AS "accountLabel"
+               t."amountDiff", t.notes, t."rawData", t."matchedTxId",
+               t."reviewCategory", t."reviewNotes", a.name AS "accountLabel"
         FROM "transactions" t
         LEFT JOIN "accounts" a ON a.id = t."accountId"
         WHERE t."platformUserId" = $1
@@ -105,7 +106,8 @@ export async function GET(
     const byNameSql = `
       SELECT t.id, t."accountId", t.type, t.status, t.source, t.amount, t.currency,
              t."txDateTime", t."shamCashTxId", t."platformTxId", t."platformUserId",
-             t."amountDiff", t.notes, t."rawData", a.name AS "accountLabel"
+             t."amountDiff", t.notes, t."rawData", t."matchedTxId",
+             t."reviewCategory", t."reviewNotes", a.name AS "accountLabel"
       FROM "transactions" t
       LEFT JOIN "accounts" a ON a.id = t."accountId"
       WHERE (
@@ -139,7 +141,8 @@ export async function GET(
       const byUserSql = `
         SELECT t.id, t."accountId", t.type, t.status, t.source, t.amount, t.currency,
                t."txDateTime", t."shamCashTxId", t."platformTxId", t."platformUserId",
-               t."amountDiff", t.notes, t."rawData", a.name AS "accountLabel"
+               t."amountDiff", t.notes, t."rawData", t."matchedTxId",
+               t."reviewCategory", t."reviewNotes", a.name AS "accountLabel"
         FROM "transactions" t
         LEFT JOIN "accounts" a ON a.id = t."accountId"
         WHERE t."platformUserId" = ANY($1::text[])

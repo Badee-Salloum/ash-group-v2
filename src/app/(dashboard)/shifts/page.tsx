@@ -50,6 +50,16 @@ export default function ShiftsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [msg, setMsg] = useState('')
 
+  // Counterpart suggestion: as the user picks wallets, ask the server who
+  // currently holds those wallets in an open session. This is the previous-
+  // shift employee they're taking over from — surface their name so the user
+  // doesn't have to know who to pick from a dropdown.
+  const [counterpart, setCounterpart] = useState<{
+    id: string; name: string; sessionStatus: string
+  } | null>(null)
+  const [counterpartCandidates, setCounterpartCandidates] = useState<Array<{ id: string; name: string }>>([])
+  const [counterpartLoading, setCounterpartLoading] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     const [me, all, emps] = await Promise.all([
@@ -78,6 +88,42 @@ export default function ShiftsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Counterpart lookup — debounced so we don't fire on every checkbox toggle.
+  useEffect(() => {
+    if (!showCheckIn) return
+    if (walletIds.size === 0) {
+      setCounterpart(null)
+      setCounterpartCandidates([])
+      return
+    }
+    setCounterpartLoading(true)
+    const ids = Array.from(walletIds).join(',')
+    const t = setTimeout(() => {
+      fetch(`/api/shifts/sessions/counterpart?walletIds=${encodeURIComponent(ids)}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            if (d.counterpart) {
+              setCounterpart({ ...d.counterpart, sessionStatus: d.sessionStatus })
+              setCounterpartCandidates([])
+              setHandoverFrom(d.counterpart.id)
+            } else if (d.ambiguous) {
+              setCounterpart(null)
+              setCounterpartCandidates(d.candidates || [])
+              setHandoverFrom('')
+            } else {
+              setCounterpart(null)
+              setCounterpartCandidates([])
+              setHandoverFrom('')
+            }
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => setCounterpartLoading(false))
+    }, 350)
+    return () => clearTimeout(t)
+  }, [walletIds, showCheckIn])
 
   const myActive = mySessions.find(s => s.status === 'ACTIVE' || s.status === 'PENDING_END')
 
@@ -272,7 +318,34 @@ export default function ShiftsPage() {
                     <option key={e.id} value={e.id}>{e.name}{e.jobTitle ? ` (${e.jobTitle})` : ''}</option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-400 mt-1">إن اخترت موظفاً، يجب أن تكون لديه جلسة نشطة. ستحتاج موافقة المشرف.</p>
+                {counterpartLoading && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">جاري البحث عن الموظف المقابل…</p>
+                )}
+                {!counterpartLoading && counterpart && (
+                  <div className="mt-1.5 text-[11px] bg-emerald-50 border border-emerald-200 text-emerald-800 rounded px-2 py-1.5">
+                    ✓ الموظف المقابل (حسب المحافظ): <strong>{counterpart.name}</strong>
+                    {counterpart.sessionStatus === 'PENDING_END' && (
+                      <span className="block opacity-75 mt-0.5">(طلب إنهاء جلسته بالفعل — التسليم سيكتمل تلقائياً)</span>
+                    )}
+                    {counterpart.sessionStatus === 'ACTIVE' && (
+                      <span className="block opacity-75 mt-0.5">(لم يطلب إنهاء جلسته بعد — جلستك ستنتظر طلبه)</span>
+                    )}
+                  </div>
+                )}
+                {!counterpartLoading && counterpartCandidates.length > 0 && (
+                  <div className="mt-1.5 text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded px-2 py-1.5">
+                    ⚠ عدة موظفين يحملون هذه المحافظ — اختر يدوياً من القائمة أعلاه:
+                    <ul className="mt-1 list-disc list-inside opacity-90">
+                      {counterpartCandidates.map(c => (
+                        <li key={c.id}>{c.name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {!counterpartLoading && !counterpart && counterpartCandidates.length === 0 && walletIds.size > 0 && (
+                  <p className="text-[11px] text-gray-500 mt-1.5">لا يوجد موظف سابق لهذه المحافظ — سيتم التشغيل بدون تسليم.</p>
+                )}
+                <p className="text-[10px] text-gray-400 mt-1">إن اخترت موظفاً، يجب أن تكون لديه جلسة نشطة.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">المحافظ التي ستعمل عليها</label>

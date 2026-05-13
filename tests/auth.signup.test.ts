@@ -1,24 +1,30 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Mock the DB client before importing the route — Vitest hoists vi.mock calls
-// above imports so the mock is in place when route.ts loads.
-const findUniqueMock = vi.fn()
-const createMock = vi.fn()
+// above imports so the mock fns must live inside vi.hoisted().
+const dbMocks = vi.hoisted(() => ({
+  findUniqueMock: vi.fn(),
+  createMock: vi.fn(),
+}))
 vi.mock('@/lib/db/client', () => ({
   db: {
     user: {
-      findUnique: (...args: unknown[]) => findUniqueMock(...args),
-      create: (...args: unknown[]) => createMock(...args),
+      findUnique: dbMocks.findUniqueMock,
+      create: dbMocks.createMock,
     },
   },
 }))
+const { findUniqueMock, createMock } = dbMocks
 
 // rateLimit is a real module — but we replace it so the test doesn't trip on
 // shared state between cases.
-const rateLimitMock = vi.fn(() => ({ ok: true, remaining: 4, resetInMs: 0 }))
-vi.mock('@/lib/rateLimit', () => ({
-  rateLimit: (...args: unknown[]) => rateLimitMock(...args),
+const rlMocks = vi.hoisted(() => ({
+  rateLimitMock: vi.fn(() => ({ ok: true, remaining: 4, resetInMs: 0 })),
 }))
+vi.mock('@/lib/rateLimit', () => ({
+  rateLimit: rlMocks.rateLimitMock,
+}))
+const { rateLimitMock } = rlMocks
 
 import { POST } from '@/app/api/auth/signup/route'
 
@@ -182,7 +188,8 @@ describe('POST /api/auth/signup — rate limit', () => {
       makeRequest({ name: 'Ahmed', email: 'a@b.co', password: 'LongEnough1' }) as any,
     )
     expect(rateLimitMock).toHaveBeenCalled()
-    const key = rateLimitMock.mock.calls[0][0] as string
+    const firstCall = rateLimitMock.mock.calls[0] as unknown[] | undefined
+    const key = firstCall?.[0] as string | undefined
     expect(key).toContain('signup')
     expect(key).toContain('1.2.3.4')
   })
