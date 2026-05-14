@@ -23,6 +23,7 @@
 
 import { db } from '@/lib/db/client'
 import { audit } from '@/lib/auth'
+import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
 
 export type AutoApproveTrigger =
   | { incomingSessionId: string }
@@ -118,10 +119,13 @@ export async function tryAutoApproveHandover(
   }
 
   // ── Schedule check: incoming must be on the roster today, not isDayOff. ──
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const todayEnd = new Date(todayStart)
-  todayEnd.setDate(todayStart.getDate() + 1)
+  // "Today" is the Damascus calendar day, not the server's local day. A
+  // check-in at 00:47 Damascus is 21:47 UTC the previous day — using the
+  // server's midnight would look up the wrong day's roster and wrongly
+  // reject the handover.
+  const todayKey = damascusDateStr(new Date())
+  const todayStart = damascusDayStartUtc(todayKey)
+  const todayEnd = damascusDayStartUtc(addDays(todayKey, 1))
   const scheduled = await db.shift.findFirst({
     where: {
       userId: incoming.userId,
