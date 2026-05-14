@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Calendar, Save, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { Save, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { weekStartStr, weekDays, addDays, dayOfWeek } from '@/lib/datetime'
 
 interface Shift {
   id: string
@@ -30,16 +31,11 @@ const SHIFT_LABEL: Record<string, { label: string; cls: string }> = {
 
 const DAY_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 
-function startOfWeek(d: Date): Date {
-  const day = d.getDay()
-  const monday = new Date(d)
-  monday.setDate(d.getDate() - day)
-  monday.setHours(0, 0, 0, 0)
-  return monday
-}
-
 export default function SchedulePage() {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
+  // weekStart is always a YYYY-MM-DD Sunday string (Damascus calendar). Using
+  // strings throughout avoids the toISOString()/getDay() timezone drift that
+  // shifted the week back a day on a UTC+3 client.
+  const [weekStart, setWeekStart] = useState(() => weekStartStr(new Date()))
   const [shifts, setShifts] = useState<Shift[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [minPerShift, setMinPerShift] = useState(1)
@@ -48,16 +44,13 @@ export default function SchedulePage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
-    d.setDate(weekStart.getDate() + i)
-    return d
-  })
+  // The 7 YYYY-MM-DD day strings of the displayed week.
+  const days = weekDays(weekStart)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const from = days[0].toISOString().slice(0, 10)
-    const to = days[6].toISOString().slice(0, 10)
+    const from = days[0]
+    const to = days[6]
     const [s, e] = await Promise.all([
       fetch(`/api/schedule?from=${from}&to=${to}`).then(r => r.json()),
       fetch('/api/employees').then(r => r.json()),
@@ -95,7 +88,7 @@ export default function SchedulePage() {
 
   async function handleSuggest() {
     setLoading(true)
-    const from = days[0].toISOString().slice(0, 10)
+    const from = days[0]
     const r = await fetch(
       `/api/schedule?action=suggest&from=${from}&minPerShift=${minPerShift}&defaultOffDays=${defaultOffDays}`,
       { method: 'POST' },
@@ -143,9 +136,7 @@ export default function SchedulePage() {
   }
 
   function changeWeek(delta: number) {
-    const next = new Date(weekStart)
-    next.setDate(weekStart.getDate() + delta * 7)
-    setWeekStart(next)
+    setWeekStart(weekStartStr(addDays(weekStart, delta * 7)))
   }
 
   return (
@@ -153,11 +144,11 @@ export default function SchedulePage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">جدول المناوبات</h1>
-          <p className="text-sm text-gray-500 mt-0.5">أسبوع {days[0].toLocaleDateString('ar-SY')} ← {days[6].toLocaleDateString('ar-SY')}</p>
+          <p className="text-sm text-gray-500 mt-0.5 font-mono">أسبوع {days[0]} ← {days[6]}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => changeWeek(-1)} className="btn-secondary btn-sm">← الأسبوع السابق</button>
-          <button onClick={() => setWeekStart(startOfWeek(new Date()))} className="btn-secondary btn-sm">الأسبوع الحالي</button>
+          <button onClick={() => setWeekStart(weekStartStr(new Date()))} className="btn-secondary btn-sm">الأسبوع الحالي</button>
           <button onClick={() => changeWeek(1)} className="btn-secondary btn-sm">الأسبوع التالي →</button>
         </div>
       </div>
@@ -201,8 +192,8 @@ export default function SchedulePage() {
                 <th className="px-3 py-3 text-right font-semibold text-gray-600 w-32">المناوبة</th>
                 {days.map((d, i) => (
                   <th key={i} className="px-2 py-3 text-center font-semibold text-gray-600 min-w-[140px]">
-                    <div className="text-xs">{DAY_NAMES[d.getDay()]}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">{d.toISOString().slice(5, 10)}</div>
+                    <div className="text-xs">{DAY_NAMES[dayOfWeek(d)]}</div>
+                    <div className="text-[10px] text-gray-400 font-mono">{d.slice(5)}</div>
                   </th>
                 ))}
               </tr>
@@ -214,8 +205,7 @@ export default function SchedulePage() {
                     <div className="text-sm font-bold text-gray-700">شيفت {sn === 'ONE' ? 'أول' : sn === 'TWO' ? 'ثاني' : 'ثالث'}</div>
                     <div className="text-[10px] text-gray-500 font-mono">{SHIFT_LABEL[sn].label}</div>
                   </td>
-                  {days.map((d, i) => {
-                    const dateStr = d.toISOString().slice(0, 10)
+                  {days.map((dateStr, i) => {
                     const list = getShifts(dateStr, sn)
                     const offCount = list.filter(s => s.isDayOff).length
                     const workingCount = list.length - offCount

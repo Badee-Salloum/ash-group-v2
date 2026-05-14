@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { ChevronRight, ChevronLeft, Loader2, Clock, RefreshCw } from 'lucide-react'
-import { fmtSyriaDate, fmtSyria } from '@/lib/datetime'
+import { fmtSyria, weekStartStr, weekDays, addDays, dayOfWeek, damascusDateStr } from '@/lib/datetime'
 
 interface DayCell {
   dayIndex: number
@@ -36,18 +36,17 @@ interface AttendanceRow {
 
 const DAY_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 
-function startOfWeek(d: Date): string {
-  const day = d.getDay()
-  const m = new Date(d); m.setDate(d.getDate() - day); m.setHours(0, 0, 0, 0)
-  return m.toISOString().slice(0, 10)
-}
-function isoWeekNumber(d: Date): number {
-  const target = new Date(d.valueOf())
-  const dayNr = (d.getDay() + 6) % 7
-  target.setDate(target.getDate() - dayNr + 3)
+// ISO week number for a YYYY-MM-DD string. Parsed as UTC so the result is
+// timezone-stable.
+function isoWeekNumber(dateStr: string): number {
+  const target = new Date(`${dateStr}T00:00:00Z`)
+  const dayNr = (target.getUTCDay() + 6) % 7
+  target.setUTCDate(target.getUTCDate() - dayNr + 3)
   const firstThursday = target.valueOf()
-  target.setMonth(0, 1)
-  if (target.getDay() !== 4) target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7)
+  target.setUTCMonth(0, 1)
+  if (target.getUTCDay() !== 4) {
+    target.setUTCMonth(0, 1 + ((4 - target.getUTCDay()) + 7) % 7)
+  }
   return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000)
 }
 function fmtHours(mins: number): string {
@@ -58,7 +57,8 @@ function fmtHours(mins: number): string {
 }
 
 export default function AttendancePage() {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
+  // weekStart is always a YYYY-MM-DD Sunday string (Damascus calendar).
+  const [weekStart, setWeekStart] = useState(() => weekStartStr(new Date()))
   const [rows, setRows] = useState<AttendanceRow[]>([])
   const [loading, setLoading] = useState(true)
   const [activeCell, setActiveCell] = useState<{ row: string; day: number } | null>(null)
@@ -74,12 +74,13 @@ export default function AttendancePage() {
   useEffect(() => { load() }, [load])
 
   function changeWeek(delta: number) {
-    const d = new Date(weekStart); d.setDate(d.getDate() + delta * 7)
-    setWeekStart(startOfWeek(d))
+    setWeekStart(weekStartStr(addDays(weekStart, delta * 7)))
   }
 
-  const ws = new Date(weekStart)
-  const we = new Date(ws); we.setDate(ws.getDate() + 6)
+  // The 7 YYYY-MM-DD day strings of the displayed week.
+  const dayKeys = weekDays(weekStart)
+  const weekEnd = dayKeys[6]
+  const todayKey = damascusDateStr(new Date())
 
   const totalMinutesAll = rows.reduce((s, r) => s + r.weekMinutes, 0)
   const activeNow = rows.reduce(
@@ -95,16 +96,16 @@ export default function AttendancePage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="inline-flex items-center gap-2 bg-blue-50 text-blue-800 px-3 py-1.5 rounded-xl text-xs font-medium">
-            <span>الأسبوع <span className="font-mono font-bold">{isoWeekNumber(ws)}</span></span>
+            <span>الأسبوع <span className="font-mono font-bold">{isoWeekNumber(weekStart)}</span></span>
             <span className="text-blue-300">·</span>
-            <span className="font-mono">{fmtSyriaDate(weekStart)}</span>
+            <span className="font-mono">{weekStart}</span>
             <span className="text-blue-300">←</span>
-            <span className="font-mono">{fmtSyriaDate(we)}</span>
+            <span className="font-mono">{weekEnd}</span>
           </span>
           <button onClick={() => changeWeek(-1)} className="btn-secondary btn-sm" title="الأسبوع السابق">
             <ChevronRight size={14} />
           </button>
-          <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="input py-1 text-sm w-auto" />
+          <input type="date" value={weekStart} onChange={e => setWeekStart(weekStartStr(e.target.value))} className="input py-1 text-sm w-auto" />
           <button onClick={() => changeWeek(1)} className="btn-secondary btn-sm" title="الأسبوع التالي">
             <ChevronLeft size={14} />
           </button>
@@ -146,13 +147,13 @@ export default function AttendancePage() {
                 <th className="px-3 py-2 text-right font-semibold text-gray-600 sticky right-0 bg-gray-50 min-w-[180px]">
                   الموظف
                 </th>
-                {DAY_NAMES.map((dn, i) => {
-                  const date = new Date(ws); date.setDate(ws.getDate() + i)
-                  const isToday = new Date().toDateString() === date.toDateString()
+                {dayKeys.map((dayKey, i) => {
+                  const isToday = dayKey === todayKey
+                  const [, mm, dd] = dayKey.split('-')
                   return (
                     <th key={i} className={`px-3 py-2 text-center font-semibold text-gray-600 min-w-[110px] ${isToday ? 'bg-blue-50' : ''}`}>
-                      <div className="text-xs">{dn}</div>
-                      <div className="text-[10px] text-gray-400 font-mono">{date.getDate()}/{date.getMonth() + 1}</div>
+                      <div className="text-xs">{DAY_NAMES[dayOfWeek(dayKey)]}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">{Number(dd)}/{Number(mm)}</div>
                     </th>
                   )
                 })}

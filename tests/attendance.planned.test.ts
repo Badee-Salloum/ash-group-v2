@@ -1,41 +1,24 @@
 import { describe, it, expect } from 'vitest'
 import {
-  dayIndexOf,
+  shiftDateKey,
   buildPlannedMatrix,
   derivePlannedFields,
   type PlannedShiftRow,
 } from '@/lib/attendance/planned'
 
-// Week anchored on a known Sunday.
-const WEEK_START = new Date(2026, 4, 10) // Sun May 10 2026, local
+// A week's worth of YYYY-MM-DD day strings (Sun May 10 2026 → Sat May 16).
+const WEEK_DAYS = [
+  '2026-05-10', '2026-05-11', '2026-05-12', '2026-05-13',
+  '2026-05-14', '2026-05-15', '2026-05-16',
+]
 
-describe('dayIndexOf', () => {
-  it('maps weekStart itself to index 0', () => {
-    expect(dayIndexOf(WEEK_START, WEEK_START)).toBe(0)
+describe('shiftDateKey', () => {
+  it('slices a YYYY-MM-DD string as-is', () => {
+    expect(shiftDateKey('2026-05-12')).toBe('2026-05-12')
   })
 
-  it('maps each day of the week to 0..6', () => {
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(WEEK_START)
-      d.setDate(WEEK_START.getDate() + i)
-      expect(dayIndexOf(d, WEEK_START)).toBe(i)
-    }
-  })
-
-  it('clamps a date before the week to 0', () => {
-    const before = new Date(WEEK_START)
-    before.setDate(WEEK_START.getDate() - 3)
-    expect(dayIndexOf(before, WEEK_START)).toBe(0)
-  })
-
-  it('clamps a date after the week to 6', () => {
-    const after = new Date(WEEK_START)
-    after.setDate(WEEK_START.getDate() + 20)
-    expect(dayIndexOf(after, WEEK_START)).toBe(6)
-  })
-
-  it('accepts ISO string dates', () => {
-    expect(dayIndexOf('2026-05-12', WEEK_START)).toBe(2) // Tuesday
+  it('slices a Date (UTC-midnight @db.Date) to its calendar day', () => {
+    expect(shiftDateKey(new Date('2026-05-12T00:00:00.000Z'))).toBe('2026-05-12')
   })
 })
 
@@ -46,15 +29,23 @@ describe('buildPlannedMatrix', () => {
       { userId: 'u1', date: '2026-05-12', shiftNumber: 'ONE', isDayOff: true },
       { userId: 'u2', date: '2026-05-11', shiftNumber: 'TWO', isDayOff: false },
     ]
-    const m = buildPlannedMatrix(rows, ['u1', 'u2'], WEEK_START)
+    const m = buildPlannedMatrix(rows, ['u1', 'u2'], WEEK_DAYS)
     expect(m.get('u1')![0]).toEqual({ shiftNumber: 'ONE', isDayOff: false })
     expect(m.get('u1')![2]).toEqual({ shiftNumber: 'ONE', isDayOff: true })
     expect(m.get('u1')![1]).toBeUndefined()
     expect(m.get('u2')![1]).toEqual({ shiftNumber: 'TWO', isDayOff: false })
   })
 
+  it('accepts Date-typed shift dates (Prisma @db.Date)', () => {
+    const rows: PlannedShiftRow[] = [
+      { userId: 'u1', date: new Date('2026-05-14T00:00:00.000Z'), shiftNumber: 'THREE', isDayOff: false },
+    ]
+    const m = buildPlannedMatrix(rows, ['u1'], WEEK_DAYS)
+    expect(m.get('u1')![4]).toEqual({ shiftNumber: 'THREE', isDayOff: false })
+  })
+
   it('every listed user gets a 7-slot row even with no shifts', () => {
-    const m = buildPlannedMatrix([], ['u1', 'u2'], WEEK_START)
+    const m = buildPlannedMatrix([], ['u1', 'u2'], WEEK_DAYS)
     expect(m.get('u1')).toHaveLength(7)
     expect(m.get('u2')!.every(c => c === undefined)).toBe(true)
   })
@@ -63,8 +54,17 @@ describe('buildPlannedMatrix', () => {
     const rows: PlannedShiftRow[] = [
       { userId: 'stranger', date: '2026-05-10', shiftNumber: 'ONE', isDayOff: false },
     ]
-    const m = buildPlannedMatrix(rows, ['u1'], WEEK_START)
+    const m = buildPlannedMatrix(rows, ['u1'], WEEK_DAYS)
     expect(m.has('stranger')).toBe(false)
+    expect(m.get('u1')!.every(c => c === undefined)).toBe(true)
+  })
+
+  it('ignores shifts whose date falls outside the displayed week', () => {
+    const rows: PlannedShiftRow[] = [
+      { userId: 'u1', date: '2026-05-03', shiftNumber: 'ONE', isDayOff: false }, // week before
+      { userId: 'u1', date: '2026-05-20', shiftNumber: 'TWO', isDayOff: false }, // week after
+    ]
+    const m = buildPlannedMatrix(rows, ['u1'], WEEK_DAYS)
     expect(m.get('u1')!.every(c => c === undefined)).toBe(true)
   })
 })

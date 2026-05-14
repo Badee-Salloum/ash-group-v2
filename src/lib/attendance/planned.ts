@@ -1,6 +1,9 @@
 // Pure helpers for merging the planned roster (Shift rows) into the weekly
-// attendance matrix. Extracted from the attendance route so the day-indexing
+// attendance matrix. Extracted from the attendance route so the day-matching
 // and planned/day-off derivation can be unit-tested without a database.
+//
+// Day matching is done by comparing YYYY-MM-DD calendar strings — never by
+// millisecond arithmetic — so it is stable regardless of server timezone.
 
 export interface PlannedShiftRow {
   userId: string
@@ -14,30 +17,33 @@ export interface PlannedCell {
   isDayOff: boolean
 }
 
-// Which day-of-week column (0..6) a date falls into, relative to weekStart.
-// Clamped to [0,6] so a stray out-of-range date can't write past the array.
-export function dayIndexOf(date: Date | string, weekStart: Date): number {
-  const t = new Date(date).getTime()
-  const raw = Math.floor((t - weekStart.getTime()) / 86_400_000)
-  return Math.max(0, Math.min(6, raw))
+// YYYY-MM-DD key for a Shift.date value. Shift.date is `@db.Date`, which
+// Prisma returns as a Date at UTC midnight, so slicing the ISO string yields
+// the correct calendar day without timezone math. Plain strings are sliced
+// as-is.
+export function shiftDateKey(date: Date | string): string {
+  return typeof date === 'string'
+    ? date.slice(0, 10)
+    : date.toISOString().slice(0, 10)
 }
 
-// Build planned[userId] → 7-slot array of PlannedCell|undefined.
+// Build planned[userId] → array aligned to `weekDays` (one slot per day,
+// `undefined` where nothing is scheduled).
 export function buildPlannedMatrix(
   rows: PlannedShiftRow[],
   userIds: string[],
-  weekStart: Date,
+  weekDays: string[],
 ): Map<string, Array<PlannedCell | undefined>> {
   const planned = new Map<string, Array<PlannedCell | undefined>>()
   for (const id of userIds) {
-    planned.set(id, Array.from({ length: 7 }, () => undefined))
+    planned.set(id, Array.from({ length: weekDays.length }, () => undefined))
   }
   for (const r of rows) {
     const row = planned.get(r.userId)
     if (!row) continue // shift for a user not in this attendance view — ignore
-    row[dayIndexOf(r.date, weekStart)] = {
-      shiftNumber: r.shiftNumber,
-      isDayOff: r.isDayOff,
+    const idx = weekDays.indexOf(shiftDateKey(r.date))
+    if (idx >= 0) {
+      row[idx] = { shiftNumber: r.shiftNumber, isDayOff: r.isDayOff }
     }
   }
   return planned
