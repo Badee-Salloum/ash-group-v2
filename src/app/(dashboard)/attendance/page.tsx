@@ -10,6 +10,9 @@ interface DayCell {
   totalMinutes: number
   isActive: boolean
   isComplete: boolean
+  // Planned roster for this day from the schedule (null = nothing scheduled).
+  plannedShift: 'ONE' | 'TWO' | 'THREE' | null
+  plannedDayOff: boolean
   sessions: Array<{
     id: string
     startAt: string
@@ -217,21 +220,46 @@ export default function AttendancePage() {
                             const has = list.length > 0
                             const isActive = list.some((s: typeof list[0]) => s.status === 'ACTIVE' || s.status === 'PENDING_END')
                             const mins = minutesOf(list)
+                            // Is this sub-cell the shift the employee is *scheduled*
+                            // for on this day? Used to hint the planned roster
+                            // behind actual attendance.
+                            const isPlanned = d.plannedShift === sm.key
+                            const isPlannedOff = d.plannedDayOff
                             const cls = !has
-                              ? 'bg-gray-50 text-gray-300 border-gray-100'
+                              ? isPlanned
+                                ? 'bg-blue-50/60 text-blue-400 border-blue-200 border-dashed'
+                                : isPlannedOff
+                                  ? 'bg-gray-50 text-gray-300 border-gray-100'
+                                  : 'bg-gray-50 text-gray-300 border-gray-100'
                               : isActive
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : sm.cls
+                            // Cell value: actual hours if checked in, else a planned
+                            // hint ("مجدول" / "إجازة"), else plain "—".
+                            const value = has
+                              ? fmtHours(mins)
+                              : isPlanned
+                                ? 'مجدول'
+                                : isPlannedOff
+                                  ? 'إجازة'
+                                  : '—'
+                            const titleSuffix = has
+                              ? ' — ' + fmtHours(mins)
+                              : isPlanned
+                                ? ' — مجدول (لم يسجّل دخول بعد)'
+                                : isPlannedOff
+                                  ? ' — إجازة مجدولة'
+                                  : ' — لم يداوم'
                             return (
                               <button
                                 key={sm.key}
                                 onClick={() => has && setActiveCell(isActiveCell ? null : { row: row.id, day: d.dayIndex })}
                                 disabled={!has}
                                 className={`w-full rounded border px-1.5 py-0.5 text-[10px] transition hover:shadow-sm flex items-center justify-between ${cls}`}
-                                title={`${sm.label} (${sm.range})${has ? ' — ' + fmtHours(mins) : ' — لم يداوم'}`}
+                                title={`${sm.label} (${sm.range})${titleSuffix}`}
                               >
                                 <span className="opacity-70">{sm.label}</span>
-                                <span className="font-mono font-bold">{has ? fmtHours(mins) : '—'}</span>
+                                <span className={`font-mono ${value === 'مجدول' || value === 'إجازة' ? 'text-[9px]' : 'font-bold'}`}>{value}</span>
                                 {isActive && <span className="text-[8px]">●</span>}
                               </button>
                             )
@@ -281,7 +309,10 @@ export default function AttendancePage() {
           <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ● جلسة نشطة الآن
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-gray-100 border border-gray-100" /> لم يداوم
+          <span className="w-3 h-3 rounded bg-blue-50 border border-blue-200 border-dashed" /> مجدول (لم يسجّل دخول بعد)
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="w-3 h-3 rounded bg-gray-100 border border-gray-100" /> لم يداوم / إجازة
         </span>
       </div>
     </div>

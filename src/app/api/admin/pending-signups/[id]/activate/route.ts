@@ -58,6 +58,7 @@ export async function POST(
         jobTitle: jobTitle || null,
         employeeCode: employeeCode || null,
       },
+      select: { id: true },
     })
 
     await audit(session.userId, 'USER_ACTIVATED', 'User', params.id, {

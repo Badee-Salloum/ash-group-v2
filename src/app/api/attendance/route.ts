@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession, requireRole } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
+import { buildPlannedMatrix, derivePlannedFields } from '@/lib/attendance/planned'
 
 // Attendance matrix — one row per active employee, one cell per day in the
 // selected week. Each cell summarises that day's shift sessions.
@@ -36,9 +37,11 @@ export async function GET(req: NextRequest) {
     orderBy: [{ jobTitle: 'asc' }, { name: 'asc' }],
   })
 
+  const employeeIds = employees.map((e: { id: string }) => e.id)
+
   const sessions = await db.shiftSession.findMany({
     where: {
-      userId: { in: employees.map((e: { id: string }) => e.id) },
+      userId: { in: employeeIds },
       startAt: { gte: ws, lt: we },
     },
     select: {
@@ -47,6 +50,18 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { startAt: 'asc' },
   })
+
+  // Planned roster for the same week — so the matrix shows who is *supposed*
+  // to be on each shift even before anyone checks in. Without this the page
+  // is blank until the first check-in of the week.
+  const plannedShifts = await db.shift.findMany({
+    where: {
+      userId: { in: employeeIds },
+      date: { gte: ws, lt: we },
+    },
+    select: { userId: true, date: true, shiftNumber: true, isDayOff: true },
+  })
+  const planned = buildPlannedMatrix(plannedShifts, employeeIds, ws)
 
   // Group sessions by user → by day-of-week (0..6)
   const matrix = new Map<string, Array<typeof sessions>>()
@@ -58,6 +73,7 @@ export async function GET(req: NextRequest) {
 
   const data = employees.map((emp: typeof employees[0]) => {
     const dayCells = matrix.get(emp.id) || []
+    const plannedRow = planned.get(emp.id) || []
     let weekMinutes = 0
     const days = dayCells.map((daySessions, idx) => {
       const totalMinutes = daySessions.reduce((s: number, x: typeof daySessions[0]) => {
@@ -72,6 +88,7 @@ export async function GET(req: NextRequest) {
       const date = new Date(ws); date.setDate(ws.getDate() + idx)
       const isActive = daySessions.some((x: typeof daySessions[0]) => x.status === 'ACTIVE' || x.status === 'PENDING_END')
       const isComplete = daySessions.length > 0 && !isActive
+      const { plannedShift, plannedDayOff } = derivePlannedFields(plannedRow[idx])
       return {
         dayIndex: idx,
         date: date.toISOString().slice(0, 10),
@@ -79,6 +96,10 @@ export async function GET(req: NextRequest) {
         totalMinutes,
         isActive,
         isComplete,
+        // Planned roster for this day (null when nothing scheduled). The UI
+        // renders this as a faint hint behind actual attendance.
+        plannedShift,
+        plannedDayOff,
         sessions: daySessions.map((x: typeof daySessions[0]) => ({
           id: x.id,
           startAt: x.startAt,

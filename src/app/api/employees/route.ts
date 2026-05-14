@@ -17,9 +17,16 @@ export async function GET(req: NextRequest) {
     const isManagerScope = session.role === UserRole.MANAGER
     const baseWhere: Record<string, unknown> = includeInactive ? {} : { isActive: true }
     if (isManagerScope) baseWhere.role = UserRole.EMPLOYEE
+    // Explicit select (not `include`) so the query lists exactly the columns
+    // it reads. A bare `include` pulls every scalar column, which hard-breaks
+    // the endpoint whenever the schema gains a column before its migration
+    // reaches the DB.
     const employees = await db.user.findMany({
       where: baseWhere as never,
-      include: {
+      select: {
+        id: true, name: true, email: true, role: true,
+        employeeCode: true, jobTitle: true, hireDate: true, baseSalary: true,
+        phone: true, address: true, avatarUrl: true, managerId: true, isActive: true,
         manager: { select: { id: true, name: true, jobTitle: true } },
         _count: { select: { subordinates: true } },
       },

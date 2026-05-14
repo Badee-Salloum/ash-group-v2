@@ -110,6 +110,22 @@ POST `/api/auth/signup` accepts `{ name, email, password }`. New accounts are cr
 | 5b.11 | ✅ | rate limit key includes client IP | IP scoping |
 | 5b.12 | ⏳ | login refuses inactive accounts with helpful message (integration) | End-to-end activation flow |
 
+## 5d. Attendance — Planned Roster Merge (`tests/attendance.planned.test.ts`)
+
+The attendance matrix overlays the planned schedule (Shift rows) so the page shows who is *rostered* per shift even before anyone checks in. Pure helpers live in `@/lib/attendance/planned`.
+
+| # | Status | Test | Why it matters |
+|---|---|---|---|
+| 5d.1 | ✅ | dayIndexOf maps weekStart → 0, each weekday → 0..6 | Correct day-column placement |
+| 5d.2 | ✅ | dayIndexOf clamps out-of-range dates to [0,6] | No array overflow on stray dates |
+| 5d.3 | ✅ | dayIndexOf accepts ISO string dates | Prisma `@db.Date` round-trips as string |
+| 5d.4 | ✅ | buildPlannedMatrix places shifts in correct user/day slot | Core merge correctness |
+| 5d.5 | ✅ | every listed user gets a 7-slot row even with no shifts | UI never indexes undefined |
+| 5d.6 | ✅ | shifts for users outside the view are ignored | No cross-contamination |
+| 5d.7 | ✅ | derivePlannedFields: working cell → shift set, off false | UI hint derivation |
+| 5d.8 | ✅ | derivePlannedFields: day-off cell → shift null, off true | Day-off rendering |
+| 5d.9 | ✅ | derivePlannedFields: no cell → both empty | Unscheduled days |
+
 ## 6. Permissions (`tests/permissions.test.ts`)
 
 | # | Status | Test |

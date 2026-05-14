@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
     const pwCheck = validatePasswordStrength(data.password)
     if (!pwCheck.valid) return NextResponse.json({ error: pwCheck.message }, { status: 400 })
 
-    const existing = await db.user.findUnique({ where: { email: data.email } })
+    const existing = await db.user.findUnique({
+      where: { email: data.email },
+      select: { id: true },
+    })
     if (existing) return NextResponse.json({ error: 'البريد الإلكتروني مستخدم مسبقاً' }, { status: 400 })
 
     const user = await db.user.create({
@@ -59,6 +62,7 @@ export async function POST(req: NextRequest) {
           create: data.accountIds.map(accountId => ({ accountId })),
         },
       },
+      select: { id: true, name: true },
     })
 
     await audit(session.userId, 'CREATE_USER', 'User', user.id, { role: data.role })
@@ -133,7 +137,7 @@ export async function PUT(req: NextRequest) {
     }
 
     await db.$transaction([
-      db.user.update({ where: { id }, data: updateData }),
+      db.user.update({ where: { id }, data: updateData, select: { id: true } }),
       db.accountAccess.deleteMany({ where: { userId: id } }),
       ...(accountIds?.length ? [
         db.accountAccess.createMany({

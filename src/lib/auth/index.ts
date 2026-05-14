@@ -104,7 +104,24 @@ export async function loginUser(email: string, password: string, ip?: string) {
   // Normalize email — accounts are stored lower-cased, so login lookups must
   // match regardless of what the user typed.
   const normalizedEmail = email.trim().toLowerCase()
-  const user = await db.user.findUnique({ where: { email: normalizedEmail } })
+  // Explicit select: only the columns login actually needs. A bare findUnique
+  // would SELECT every scalar column, so adding a new column to the schema
+  // before its migration lands in the DB would hard-break login. Listing
+  // columns keeps auth resilient to schema-vs-DB drift.
+  const user = await db.user.findUnique({
+    where: { email: normalizedEmail },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      passwordHash: true,
+      isActive: true,
+      failedLogins: true,
+      lockedUntil: true,
+      twoFactorEnabled: true,
+    },
+  })
 
   if (!user || !user.isActive) {
     return { success: false, error: 'بيانات الدخول غير صحيحة' }
