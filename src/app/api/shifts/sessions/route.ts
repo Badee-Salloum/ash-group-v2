@@ -172,8 +172,14 @@ export async function POST(req: NextRequest) {
 }
 
 const patchSchema = z.object({
-  action: z.enum(['requestEnd', 'approveHandover', 'cancel']),
+  action: z.enum(['requestEnd', 'approveHandover', 'cancel', 'edit']),
   sessionId: z.string(),
+  // Fields below are only read by the 'edit' action.
+  shiftNumber: z.enum(['ONE', 'TWO', 'THREE']).nullable().optional(),
+  walletIds: z.array(z.string()).optional(),
+  notes: z.string().nullable().optional(),
+  startAt: z.string().datetime().optional(),
+  endAt: z.string().datetime().nullable().optional(),
 })
 
 export async function PATCH(req: NextRequest) {
@@ -182,7 +188,8 @@ export async function PATCH(req: NextRequest) {
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const body = await req.json()
-    const { action, sessionId } = patchSchema.parse(body)
+    const parsed = patchSchema.parse(body)
+    const { action, sessionId } = parsed
 
     const target = await db.shiftSession.findUnique({ where: { id: sessionId } })
     if (!target) return NextResponse.json({ error: 'الجلسة غير موجودة' }, { status: 404 })
@@ -269,6 +276,94 @@ export async function PATCH(req: NextRequest) {
         data: { status: 'CANCELLED', endAt: new Date() },
       })
       await audit(session.userId, 'CANCEL_SHIFT', 'ShiftSession', sessionId, {})
+      return NextResponse.json({ success: true })
+    }
+
+    if (action === 'edit') {
+      // Permission model:
+      //   - Self: can edit notes + walletIds on their OWN open session
+      //     (status in ACTIVE | PENDING_END | PENDING_START)
+      //   - ADMIN | MANAGER | SUPERVISOR: can edit any session, including
+      //     shiftNumber + time corrections (startAt / endAt) on COMPLETED
+      //     sessions — for accounting fixes.
+      const isAdminTier = session.role === UserRole.ADMIN
+        || session.role === UserRole.MANAGER
+        || session.role === UserRole.SUPERVISOR
+      const isSelf = target.userId === session.userId
+      if (!isAdminTier && !isSelf) {
+        return NextResponse.json({ error: 'لا تملك صلاحية' }, { status: 403 })
+      }
+      const isOpen = target.status === 'ACTIVE' || target.status === 'PENDING_END' || target.status === 'PENDING_START'
+      if (!isAdminTier && !isOpen) {
+        return NextResponse.json({
+          error: 'يمكن للموظف تعديل جلسته أثناء كونها نشطة فقط. تواصل مع المشرف للتعديلات على الجلسات المغلقة.',
+        }, { status: 403 })
+      }
+
+      // Field-level gating: self-edit can only touch notes + walletIds.
+      const dataUpdates: Record<string, unknown> = {}
+      if (parsed.notes !== undefined) dataUpdates.notes = parsed.notes
+      if (isAdminTier) {
+        if (parsed.shiftNumber !== undefined) dataUpdates.shiftNumber = parsed.shiftNumber
+        if (parsed.startAt !== undefined) dataUpdates.startAt = new Date(parsed.startAt)
+        if (parsed.endAt !== undefined) {
+          dataUpdates.endAt = parsed.endAt ? new Date(parsed.endAt) : null
+          // If both timestamps are now set, recompute duration so reports stay
+          // consistent with the new window.
+          const start = (dataUpdates.startAt as Date | undefined) ?? target.startAt
+          const end = dataUpdates.endAt as Date | null
+          if (end && start) {
+            dataUpdates.durationMinutes = Math.round((end.getTime() - new Date(start).getTime()) / 60000)
+          }
+        }
+      } else if (parsed.shiftNumber !== undefined || parsed.startAt !== undefined || parsed.endAt !== undefined) {
+        return NextResponse.json({
+          error: 'لا تملك صلاحية تعديل توقيت/رقم المناوبة. هذا للمشرف.',
+        }, { status: 403 })
+      }
+
+      // Wallet edits replace the full set; validate against the user's allowed
+      // assignments (the same check the check-in flow runs).
+      let walletDelta = false
+      if (parsed.walletIds) {
+        const allowed = await db.employeeWalletAssignment.findMany({
+          where: { userId: target.userId, accountId: { in: parsed.walletIds } },
+          select: { accountId: true },
+        })
+        const allowedIds = new Set(allowed.map((a: { accountId: string }) => a.accountId))
+        const invalid = parsed.walletIds.filter((id: string) => !allowedIds.has(id))
+        if (invalid.length > 0) {
+          return NextResponse.json({
+            error: `غير مسموح بـ ${invalid.length} محفظة من المختارة لهذا الموظف.`,
+          }, { status: 400 })
+        }
+        walletDelta = true
+      }
+
+      // Apply scalar updates + wallet rewrite atomically.
+      await db.$transaction(async (tx: typeof db) => {
+        if (Object.keys(dataUpdates).length > 0) {
+          await tx.shiftSession.update({
+            where: { id: sessionId },
+            data: dataUpdates,
+            select: { id: true },
+          })
+        }
+        if (walletDelta) {
+          await tx.shiftSessionWallet.deleteMany({ where: { sessionId } })
+          if (parsed.walletIds!.length > 0) {
+            await tx.shiftSessionWallet.createMany({
+              data: parsed.walletIds!.map((accountId: string) => ({ sessionId, accountId })),
+            })
+          }
+        }
+      })
+
+      await audit(session.userId, 'EDIT_SHIFT_SESSION', 'ShiftSession', sessionId, {
+        fieldsChanged: Object.keys(dataUpdates),
+        walletsChanged: walletDelta,
+        bySelf: isSelf && !isAdminTier,
+      })
       return NextResponse.json({ success: true })
     }
 

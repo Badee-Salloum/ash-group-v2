@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { fmtSyria } from '@/lib/datetime'
-import { Clock, Check, X, ArrowRightLeft, Loader2, LogIn, LogOut } from 'lucide-react'
+import { Clock, Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil } from 'lucide-react'
+import SessionEditModal, { type SessionLite } from '@/components/forms/SessionEditModal'
 
 interface Account { id: string; name: string; currency: string }
 interface Employee { id: string; name: string; jobTitle: string | null }
@@ -37,9 +38,13 @@ export default function ShiftsPage() {
   const [mySessions, setMySessions] = useState<Sess[]>([])
   const [allActive, setAllActive] = useState<Sess[]>([])
   const [pendingApprovals, setPendingApprovals] = useState<Sess[]>([])
+  const [recent, setRecent] = useState<Sess[]>([])
   const [allowedWallets, setAllowedWallets] = useState<Account[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [myRole, setMyRole] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  // Session being edited (null = modal closed).
+  const [editingSession, setEditingSession] = useState<Sess | null>(null)
 
   // Form state
   const [showCheckIn, setShowCheckIn] = useState(false)
@@ -72,11 +77,19 @@ export default function ShiftsPage() {
       const data: Sess[] = all.data
       setAllActive(data.filter(s => s.status === 'ACTIVE' || s.status === 'PENDING_END'))
       setPendingApprovals(data.filter(s => s.status === 'PENDING_START'))
+      // Most recent 10 closed sessions — surfaced so supervisors can
+      // correct mistakes (timing / shift number) after the fact.
+      setRecent(
+        data
+          .filter(s => s.status === 'COMPLETED' || s.status === 'CANCELLED')
+          .slice(0, 10),
+      )
     }
     if (emps.success) setEmployees(emps.data || [])
-    // load my wallet assignments
+    // load my wallet assignments + role (for admin-tier UI gating)
     const meRes = await fetch('/api/me').catch(() => null)
     const meData = meRes ? await meRes.json().catch(() => ({})) : {}
+    if (meData?.role) setMyRole(meData.role)
     const myUserId = meData?.id
     if (myUserId) {
       const w = await fetch(`/api/employees/${myUserId}/wallets`).then(r => r.json()).catch(() => ({ data: [] }))
@@ -283,12 +296,75 @@ export default function ShiftsPage() {
                 <div className="flex items-center gap-2">
                   <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
                   <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
+                  <button
+                    onClick={() => setEditingSession(s)}
+                    className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
+                    title="تعديل الجلسة"
+                  >
+                    <Pencil size={14} />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Recently closed sessions — supervisors edit timing / shift number here */}
+      {recent.length > 0 && (
+        <div className="card p-4">
+          <h2 className="font-bold text-gray-800 mb-3">جلسات مغلقة حديثاً ({recent.length})</h2>
+          <div className="space-y-2">
+            {recent.map(s => (
+              <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  {s.user.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={s.user.avatarUrl} alt={s.user.name} className="w-9 h-9 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 text-white flex items-center justify-center font-bold text-sm">
+                      {s.user.name.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-medium text-sm">{s.user.name}</p>
+                    <p className="text-xs text-gray-500 font-mono">
+                      {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}
+                      {s.durationMinutes != null && (
+                        <span className="ms-2 text-gray-400">
+                          ({Math.floor(s.durationMinutes / 60)}س {s.durationMinutes % 60}د)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
+                  <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
+                  <button
+                    onClick={() => setEditingSession(s)}
+                    className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
+                    title="تعديل الجلسة"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Session edit modal */}
+      {editingSession && (
+        <SessionEditModal
+          session={editingSession as unknown as SessionLite}
+          allowedWallets={allowedWallets}
+          isAdminTier={['ADMIN', 'MANAGER', 'SUPERVISOR'].includes(myRole)}
+          onClose={() => setEditingSession(null)}
+          onSaved={() => { setEditingSession(null); load() }}
+        />
+      )}
 
       {/* Check-in modal */}
       {showCheckIn && (

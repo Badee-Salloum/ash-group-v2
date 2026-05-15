@@ -18,7 +18,7 @@ export type ReviewCategory =
   | null
   | 'THEFT' | 'WASTE' | 'EXTRA'
   | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR'
-  | 'COMPLAINT' | 'OTHER'
+  | 'COMPLAINT' | 'INTERNAL_TRANSFER' | 'OTHER'
 
 export interface TransactionRow {
   id: string
@@ -49,6 +49,7 @@ const CATEGORY_OPTIONS: Array<{ value: Exclude<ReviewCategory, null>; label: str
   { value: 'CUSTOMER_ERROR', label: 'خطأ زبون' },
   { value: 'PLATFORM_ERROR', label: 'خطأ منصة' },
   { value: 'COMPLAINT', label: 'شكوى' },
+  { value: 'INTERNAL_TRANSFER', label: 'تحويل داخلي (يُستبعد من الربح/الهدر)' },
   { value: 'OTHER', label: 'غير ذلك' },
 ]
 

@@ -54,15 +54,22 @@ export async function GET(req: NextRequest) {
 
         // Calculate per-currency breakdown
         const currencyBreakdowns = await Promise.all(currencies.map(async (currency: string) => {
-        // Exclude COMPLAINT-reviewed operations from profit calculations.
+        // Exclude operations a reviewer flagged as outside the P/L:
+        //   - COMPLAINT       — under investigation, may be refunded
+        //   - INTERNAL_TRANSFER — moving money between the company's own
+        //     wallets; not a customer-facing op so it's neither profit nor
+        //     waste. Surfaces under `internalTransfers` instead.
         // Explicit OR so NULL reviewCategory rows (most txs) are kept.
+        const EXCLUDED_REVIEW: Array<'COMPLAINT' | 'INTERNAL_TRANSFER'> = [
+          'COMPLAINT', 'INTERNAL_TRANSFER',
+        ]
         const baseWhere = {
           accountId: account.id,
           currency,
           ...dateFilter,
           OR: [
             { reviewCategory: null },
-            { NOT: { reviewCategory: 'COMPLAINT' as const } },
+            { NOT: { reviewCategory: { in: EXCLUDED_REVIEW } } },
           ],
         }
 
@@ -213,9 +220,45 @@ export async function GET(req: NextRequest) {
         const depNet = depGross - depWaste
         const wdNet = wdGross - wdWaste
 
-        // === INTERNAL TRANSFERS (اسم الحساب يطابق معرّفاتنا) ===
+        // === INTERNAL TRANSFERS ===
+        //   auto-detected: SC PENDING_SC rows whose name/notes match a wallet identifier
+        //   manually-marked: any row the reviewer set reviewCategory=INTERNAL_TRANSFER
+        // Both are added to the dashboard's internalTransfers bucket and are
+        // already excluded from profit/waste by `baseWhere` above (manual ones
+        // via the OR clause; auto ones are PENDING_SC which is not in the
+        // matched/discrepancy aggregates either way).
         let internalDeposits = { count: 0, amount: 0 }
         let internalWithdrawals = { count: 0, amount: 0 }
+
+        // Manually flagged operations (reviewer set INTERNAL_TRANSFER). These
+        // can be MATCHED/DISCREPANCY/PENDING — any status, any source — so we
+        // ignore `baseWhere`'s reviewCategory exclusion here by querying with
+        // the explicit category filter instead.
+        const manualWhere = {
+          accountId: account.id,
+          currency,
+          ...dateFilter,
+          reviewCategory: 'INTERNAL_TRANSFER' as const,
+        }
+        const [manualDep, manualWd] = await Promise.all([
+          db.transaction.aggregate({
+            where: { ...manualWhere, type: TransactionType.DEPOSIT },
+            _sum: { amount: true }, _count: true,
+          }),
+          db.transaction.aggregate({
+            where: { ...manualWhere, type: TransactionType.WITHDRAWAL },
+            _sum: { amount: true }, _count: true,
+          }),
+        ])
+        internalDeposits = {
+          count: manualDep._count || 0,
+          amount: Number(manualDep._sum.amount || 0),
+        }
+        internalWithdrawals = {
+          count: manualWd._count || 0,
+          amount: Number(manualWd._sum.amount || 0),
+        }
+
         if (walletIds.length > 0) {
           const [scDepRows, scWdRows] = await Promise.all([
             db.transaction.findMany({
@@ -242,13 +285,14 @@ export async function GET(req: NextRequest) {
           }
           const depInternal = scDepRows.filter((t: { rawData: unknown }) => isInternal(t.rawData as Record<string, unknown> | null))
           const wdInternal = scWdRows.filter((t: { rawData: unknown }) => isInternal(t.rawData as Record<string, unknown> | null))
+          // ADD to the manually-marked totals so both sources combine.
           internalDeposits = {
-            count: depInternal.length,
-            amount: depInternal.reduce((s: number, t: { amount: unknown }) => s + Number(t.amount || 0), 0),
+            count: internalDeposits.count + depInternal.length,
+            amount: internalDeposits.amount + depInternal.reduce((s: number, t: { amount: unknown }) => s + Number(t.amount || 0), 0),
           }
           internalWithdrawals = {
-            count: wdInternal.length,
-            amount: wdInternal.reduce((s: number, t: { amount: unknown }) => s + Number(t.amount || 0), 0),
+            count: internalWithdrawals.count + wdInternal.length,
+            amount: internalWithdrawals.amount + wdInternal.reduce((s: number, t: { amount: unknown }) => s + Number(t.amount || 0), 0),
           }
         }
 

@@ -165,14 +165,15 @@ enum TransactionStatus {
 }
 
 enum ReviewCategory {
-  THEFT          // سرقة
-  WASTE          // هدر
-  EXTRA          // زيادة
-  EMPLOYEE_ERROR // خطأ موظف
-  CUSTOMER_ERROR // خطأ زبون
-  PLATFORM_ERROR // خطأ منصة
-  COMPLAINT      // شكوى
-  OTHER          // غير ذلك
+  THEFT             // سرقة
+  WASTE             // هدر
+  EXTRA             // زيادة
+  EMPLOYEE_ERROR    // خطأ موظف
+  CUSTOMER_ERROR    // خطأ زبون
+  PLATFORM_ERROR    // خطأ منصة
+  COMPLAINT         // شكوى
+  INTERNAL_TRANSFER // تحويل داخلي بين محافظ الشركة — يُستبعد من حسابات الربح/الهدر
+  OTHER             // غير ذلك
 }
 
 // Follow-up workflow for customer-facing reviewed operations

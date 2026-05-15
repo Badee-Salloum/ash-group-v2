@@ -105,7 +105,7 @@ const updateSchema = z.object({
   platformUserId: z.string().optional(),
   notes: z.string().optional(),
   reviewCategory: z.enum([
-    'THEFT', 'WASTE', 'EXTRA', 'EMPLOYEE_ERROR', 'CUSTOMER_ERROR', 'PLATFORM_ERROR', 'COMPLAINT', 'OTHER', 'NONE',
+    'THEFT', 'WASTE', 'EXTRA', 'EMPLOYEE_ERROR', 'CUSTOMER_ERROR', 'PLATFORM_ERROR', 'COMPLAINT', 'INTERNAL_TRANSFER', 'OTHER', 'NONE',
   ]).optional(),
   reviewNotes: z.string().optional(),
 })
