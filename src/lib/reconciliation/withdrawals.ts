@@ -6,7 +6,7 @@ import {
   WithdrawalMatchedPair,
   WithdrawalDiscrepancy,
 } from '@/types'
-import { isInternalTransfer } from './walletMatch'
+import { isInternalTransfer, isSpuriousInternalPair } from './walletMatch'
 
 // NOTE: time-based matching has been DISABLED globally per request.
 // Withdrawals now only match via the explicit BankTranferComment / shamCashTxId
@@ -58,6 +58,17 @@ export function reconcileWithdrawals(
 
     const scAmount = sc.sentAmount
     const pAmount = platform.amount
+
+    // Reject spurious TX-ID matches: SC looks internal AND amounts diverge
+    // wildly. Leave both sides unmatched — SC will land in internalTransfers
+    // in Phase 2, platform in platformOnly. Prevents 440-vs-15 false pairs.
+    if (isSpuriousInternalPair({
+      scAccountNumber: sc.accountNumber, scAccountName: sc.accountName, scNotes: sc.notes,
+      walletIdentifiers, scAmount, pAmount,
+    })) {
+      continue
+    }
+
     const diff = Math.abs(scAmount - pAmount)
     usedSCIds.add(sc.txId)
     usedPlatformIds.add(platform.txId)

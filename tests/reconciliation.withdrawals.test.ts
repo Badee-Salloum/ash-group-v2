@@ -136,6 +136,39 @@ describe('reconcileWithdrawals — internal-transfer filtering', () => {
     expect(r.shamCashOnly.length).toBe(0)
     expect(r.platformOnly.length).toBe(0)
   })
+
+  it('rejects spurious TX-ID pair: SC looks internal AND amounts diverge wildly (440 vs 15)', () => {
+    // User-reported bug: 440 SC withdrawal to an internal wallet got cross-
+    // linked via TX-ID to a 15 USD platform withdrawal of a real customer.
+    // Old code reported it as DISCREPANCY 425. The wallet name match + the
+    // 26× amount gap together signal that the TX-ID link is spurious — SC
+    // should land in internalTransfers, platform in platformOnly.
+    const r = reconcileWithdrawals(
+      [sc({ txId: '1638403743', accountName: 'محفظة فرع داخلي', sentAmount: 440 })],
+      [pl({ txId: 'P_DIFF', amount: 15, shamCashTxId: '1638403743' })],
+      ['محفظة فرع'],
+    )
+    expect(r.matched.length).toBe(0)
+    expect(r.discrepancySCHigher.length).toBe(0)
+    expect(r.discrepancyPHigher.length).toBe(0)
+    expect(r.internalTransfers.length).toBe(1)
+    expect(r.internalTransfers[0].txId).toBe('1638403743')
+    expect(r.platformOnly.length).toBe(1)
+  })
+
+  it('does NOT reject when amounts are close even if SC looks internal (small-fee discrepancy)', () => {
+    // SC name overlaps a wallet identifier but amount divergence is only ~5%.
+    // The TX-ID link is still trusted; this should land in DISCREPANCY, not
+    // be treated as a spurious internal pair.
+    const r = reconcileWithdrawals(
+      [sc({ txId: 'NEAR', accountName: 'محفظة الفرع الرئيسية', sentAmount: 100 })],
+      [pl({ txId: 'P_NEAR', amount: 95, shamCashTxId: 'NEAR' })],
+      ['محفظة الفرع'],
+    )
+    expect(r.internalTransfers.length).toBe(0)
+    expect(r.discrepancySCHigher.length).toBe(1)
+    expect(r.discrepancySCHigher[0].diff).toBe(5)
+  })
 })
 
 describe('crossMatchSendsWithDeposits — TX ID only', () => {

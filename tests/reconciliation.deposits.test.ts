@@ -100,4 +100,32 @@ describe('reconcileDeposits — TX ID matching', () => {
     expect(r.shamCashOnly.length).toBe(1)
     expect(r.platformOnly.length).toBe(1)
   })
+
+  it('rejects spurious TX-ID pair: SC looks internal AND amounts diverge wildly', () => {
+    // Same bug class as the user-reported 440-vs-15 withdrawal, applied to
+    // the deposit side. Wallet name match + 10× amount gap → SC is internal,
+    // platform stays unmatched, no DISCREPANCY produced.
+    const r = reconcileDeposits(
+      [sc({ txId: 'SPUR', accountName: 'محفظة فرع داخلي', receivedAmount: 500 })],
+      [pl({ txId: 'P_DIFF', amount: 30, shamCashTxId: 'SPUR' })],
+      ['محفظة فرع'],
+    )
+    expect(r.matched.length).toBe(0)
+    expect(r.discrepancyPHigher.length).toBe(0)
+    expect(r.discrepancySCHigher.length).toBe(0)
+    expect(r.internalTransfers.length).toBe(1)
+    expect(r.platformOnly.length).toBe(1)
+  })
+
+  it('does NOT reject when amounts are close even if SC looks internal', () => {
+    // Tight protection for genuine small-fee discrepancies — the spurious
+    // guard only fires when divergence > 10× AND wallet name matches.
+    const r = reconcileDeposits(
+      [sc({ txId: 'TIGHT', accountName: 'محفظة الفرع', receivedAmount: 100 })],
+      [pl({ txId: 'P_TIGHT', amount: 96, shamCashTxId: 'TIGHT' })],
+      ['محفظة الفرع'],
+    )
+    expect(r.internalTransfers.length).toBe(0)
+    expect(r.discrepancySCHigher.length).toBe(1)
+  })
 })

@@ -5,7 +5,7 @@ import {
   MatchedPair,
   DiscrepancyItem,
 } from '@/types'
-import { isInternalTransfer } from './walletMatch'
+import { isInternalTransfer, isSpuriousInternalPair } from './walletMatch'
 
 const AMOUNT_TOLERANCE = 0.001 // floating point tolerance
 
@@ -48,10 +48,21 @@ export function reconcileDeposits(
     const pCurrency = (platform.currency || 'USD').toUpperCase()
     if (scCurrency !== pCurrency) continue
 
-    usedPlatformTxIds.add(platform.txId)
-    matchedScIds.add(sc.txId)
     const scAmount = sc.receivedAmount
     const pAmount = platform.amount
+
+    // Reject spurious TX-ID matches: SC looks internal AND amounts diverge
+    // wildly. Leave both sides unmatched — SC will land in internalTransfers
+    // in Phase 2, platform in platformOnly.
+    if (isSpuriousInternalPair({
+      scAccountNumber: sc.accountNumber, scAccountName: sc.accountName, scNotes: sc.notes,
+      walletIdentifiers, scAmount, pAmount,
+    })) {
+      continue
+    }
+
+    usedPlatformTxIds.add(platform.txId)
+    matchedScIds.add(sc.txId)
     const diff = Math.abs(scAmount - pAmount)
 
     if (diff <= AMOUNT_TOLERANCE) {
