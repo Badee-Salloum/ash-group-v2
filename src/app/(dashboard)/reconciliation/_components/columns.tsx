@@ -54,6 +54,13 @@ export function buildColumns({
       key: 'status',
       header: 'الحالة',
       render: row => {
+        // When the reviewer has flagged this as an internal transfer, show
+        // that prominently instead of the raw matching status — the row is
+        // no longer "a discrepancy that needs resolving", it's a known
+        // internal wallet move that's excluded from the P/L.
+        if (row.reviewCategory === 'INTERNAL_TRANSFER') {
+          return <span className="badge bg-slate-200 text-slate-800 ring-slate-300">تحويل داخلي</span>
+        }
         const s = STATUS_LABELS[row.status as TxStatus]
         return <span className={`badge ${s.cls}`}>{s.label}</span>
       },

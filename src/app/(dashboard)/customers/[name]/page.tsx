@@ -125,6 +125,10 @@ export default function CustomerDetailPage() {
       key: 'status',
       header: 'الحالة',
       render: r => {
+        // Reviewer-flagged internal transfers override the raw status badge.
+        if (r.reviewCategory === 'INTERNAL_TRANSFER') {
+          return <span className="badge bg-slate-200 text-slate-800 ring-slate-300">تحويل داخلي</span>
+        }
         const s = STATUS_LABELS[r.status] || { label: r.status, cls: 'badge-waste' }
         return <span className={`badge ${s.cls}`}>{s.label}</span>
       },

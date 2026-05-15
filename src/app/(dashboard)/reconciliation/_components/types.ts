@@ -1,6 +1,6 @@
 export type TxStatus = 'MATCHED' | 'PENDING_SC' | 'PENDING_P' | 'DISCREPANCY' | 'WASTE'
 export type TxType = 'DEPOSIT' | 'WITHDRAWAL'
-export type ReviewCat = 'THEFT' | 'WASTE' | 'EXTRA' | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR' | 'COMPLAINT' | 'OTHER'
+export type ReviewCat = 'THEFT' | 'WASTE' | 'EXTRA' | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR' | 'COMPLAINT' | 'INTERNAL_TRANSFER' | 'OTHER'
 export type FollowUpStat = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
 
 export const REVIEW_LABELS: Record<ReviewCat, string> = {
@@ -11,18 +11,20 @@ export const REVIEW_LABELS: Record<ReviewCat, string> = {
   CUSTOMER_ERROR: 'خطأ زبون',
   PLATFORM_ERROR: 'خطأ منصة',
   COMPLAINT: 'شكوى',
+  INTERNAL_TRANSFER: 'تحويل داخلي',
   OTHER: 'غير ذلك',
 }
 
 export const REVIEW_COLORS: Record<ReviewCat, string> = {
-  THEFT:          'bg-red-100 text-red-800 ring-red-200',
-  WASTE:          'bg-rose-100 text-rose-800 ring-rose-200',
-  EXTRA:          'bg-emerald-100 text-emerald-800 ring-emerald-200',
-  EMPLOYEE_ERROR: 'bg-amber-100 text-amber-800 ring-amber-200',
-  CUSTOMER_ERROR: 'bg-orange-100 text-orange-800 ring-orange-200',
-  PLATFORM_ERROR: 'bg-sky-100 text-sky-800 ring-sky-200',
-  COMPLAINT:      'bg-violet-100 text-violet-800 ring-violet-200',
-  OTHER:          'bg-gray-100 text-gray-800 ring-gray-200',
+  THEFT:             'bg-red-100 text-red-800 ring-red-200',
+  WASTE:             'bg-rose-100 text-rose-800 ring-rose-200',
+  EXTRA:             'bg-emerald-100 text-emerald-800 ring-emerald-200',
+  EMPLOYEE_ERROR:    'bg-amber-100 text-amber-800 ring-amber-200',
+  CUSTOMER_ERROR:    'bg-orange-100 text-orange-800 ring-orange-200',
+  PLATFORM_ERROR:    'bg-sky-100 text-sky-800 ring-sky-200',
+  COMPLAINT:         'bg-violet-100 text-violet-800 ring-violet-200',
+  INTERNAL_TRANSFER: 'bg-slate-200 text-slate-800 ring-slate-300',
+  OTHER:             'bg-gray-100 text-gray-800 ring-gray-200',
 }
 
 export const STATUS_LABELS: Record<TxStatus, { label: string; cls: string }> = {
