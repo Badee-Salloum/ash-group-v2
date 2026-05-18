@@ -56,7 +56,6 @@ model User {
   // Phase 2 relations
   shiftSessions     ShiftSession[]      @relation("ShiftSessionUser")
   approvedSessions  ShiftSession[]      @relation("ShiftSessionApprover")
-  walletAssignments EmployeeWalletAssignment[]
   scheduledShifts   Shift[]             @relation("ShiftAssignee")
   assignedShifts    Shift[]             @relation("ShiftAssigner")
   payrollEntries    PayrollEntry[]
@@ -101,8 +100,8 @@ model Account {
   uploadBatches     UploadBatch[]
   profitRateHistory ProfitRateHistory[]
   accountAccess     AccountAccess[]
-  // Phase 2 — wallet assignments per employee (Module C)
-  employeeAssignments EmployeeWalletAssignment[]
+  // Phase 3 — wallets planned per scheduled shift (replaces EmployeeWalletAssignment)
+  shiftWallets      ShiftWallet[]
 
   @@map("accounts")
 }
@@ -332,19 +331,6 @@ model ShiftSession {
   @@map("shift_sessions")
 }
 
-model EmployeeWalletAssignment {
-  id        String   @id @default(cuid())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId String
-  createdAt DateTime @default(now())
-
-  @@unique([userId, accountId])
-  @@index([userId])
-  @@map("employee_wallet_assignments")
-}
-
 model ShiftSessionWallet {
   id        String       @id @default(cuid())
   session   ShiftSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -367,6 +353,8 @@ model Shift {
   assignedById String?
   isDayOff     Boolean     @default(false)
   notes        String?
+  // Phase 3 — wallets this employee is planned to handle on this shift
+  wallets      ShiftWallet[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -374,6 +362,24 @@ model Shift {
   @@index([date])
   @@index([userId])
   @@map("shifts")
+}
+
+// Per-scheduled-shift wallet assignment. Replaces the legacy
+// EmployeeWalletAssignment (per-user permanent list) — the planning unit is
+// now (employee × day × shift), letting admins/managers vary wallet allocation
+// day-to-day directly in the schedule view.
+model ShiftWallet {
+  id        String   @id @default(cuid())
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  shiftId   String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  createdAt DateTime @default(now())
+
+  @@unique([shiftId, accountId])
+  @@index([shiftId])
+  @@index([accountId])
+  @@map("shift_wallets")
 }
 
 model PayrollEntry {

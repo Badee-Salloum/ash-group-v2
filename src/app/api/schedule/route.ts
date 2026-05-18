@@ -22,11 +22,21 @@ export async function GET(req: NextRequest) {
 
   const shifts = await db.shift.findMany({
     where: { date: { gte: from, lte: to } },
-    include: { user: { select: { id: true, name: true, jobTitle: true, avatarUrl: true } } },
+    include: {
+      user: { select: { id: true, name: true, jobTitle: true, avatarUrl: true } },
+      wallets: { select: { accountId: true } },
+    },
     orderBy: [{ date: 'asc' }, { shiftNumber: 'asc' }],
   })
 
-  return NextResponse.json({ success: true, data: shifts })
+  // Flatten wallet rows to walletIds for the frontend.
+  const data = shifts.map((s: typeof shifts[0]) => ({
+    ...s,
+    walletIds: s.wallets.map((w: { accountId: string }) => w.accountId),
+    wallets: undefined,
+  }))
+
+  return NextResponse.json({ success: true, data })
 }
 
 const upsertSchema = z.object({
@@ -36,6 +46,8 @@ const upsertSchema = z.object({
     userId: z.string(),
     isDayOff: z.boolean().optional(),
     notes: z.string().optional(),
+    // Account IDs the employee will handle on this shift (planned wallets)
+    walletIds: z.array(z.string()).optional(),
   })),
 })
 
@@ -53,7 +65,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = upsertSchema.parse(body)
 
-    // Determine date range covered to delete-then-recreate (idempotent week save)
+    // Determine date range covered to delete-then-recreate (idempotent week save).
+    // ShiftWallet rows cascade-delete with the parent Shift (onDelete: Cascade).
     const dates = data.shifts.map((s: typeof data.shifts[0]) => new Date(s.date))
     if (dates.length === 0) {
       return NextResponse.json({ success: true, count: 0 })
@@ -61,11 +74,15 @@ export async function POST(req: NextRequest) {
     const minDate = new Date(Math.min(...dates.map((d: Date) => d.getTime())))
     const maxDate = new Date(Math.max(...dates.map((d: Date) => d.getTime())))
 
-    await db.$transaction([
-      db.shift.deleteMany({
+    // Recreate shifts first (sets the new IDs), then attach wallets in a second
+    // step. createMany() does not return rows in postgres so we re-query by the
+    // unique tuple (date, shiftNumber, userId) to map back to the new IDs.
+    await db.$transaction(async (tx: typeof db) => {
+      await tx.shift.deleteMany({
         where: { date: { gte: minDate, lte: maxDate } },
-      }),
-      db.shift.createMany({
+      })
+      if (data.shifts.length === 0) return
+      await tx.shift.createMany({
         data: data.shifts.map((s: typeof data.shifts[0]) => ({
           date: new Date(s.date),
           shiftNumber: s.shiftNumber,
@@ -75,8 +92,35 @@ export async function POST(req: NextRequest) {
           notes: s.notes,
         })),
         skipDuplicates: true,
-      }),
-    ])
+      })
+      // Build wallet rows in a single insert
+      const shiftsWithWallets = data.shifts.filter(s => (s.walletIds?.length ?? 0) > 0 && !s.isDayOff)
+      if (shiftsWithWallets.length === 0) return
+      const created = await tx.shift.findMany({
+        where: { date: { gte: minDate, lte: maxDate } },
+        select: { id: true, date: true, shiftNumber: true, userId: true },
+      })
+      const lookup = new Map<string, string>(
+        created.map((c: { id: string; date: Date; shiftNumber: string; userId: string }): [string, string] =>
+          [`${c.date.toISOString().slice(0, 10)}|${c.shiftNumber}|${c.userId}`, c.id],
+        ),
+      )
+      const walletRows: { shiftId: string; accountId: string }[] = []
+      for (const s of shiftsWithWallets) {
+        const key = `${s.date.slice(0, 10)}|${s.shiftNumber}|${s.userId}`
+        const shiftId = lookup.get(key)
+        if (!shiftId) continue
+        for (const accountId of s.walletIds!) {
+          walletRows.push({ shiftId, accountId })
+        }
+      }
+      if (walletRows.length > 0) {
+        await tx.shiftWallet.createMany({
+          data: walletRows,
+          skipDuplicates: true,
+        })
+      }
+    })
 
     await audit(session.userId, 'SAVE_SCHEDULE', 'Shift', null as unknown as string, {
       count: data.shifts.length,

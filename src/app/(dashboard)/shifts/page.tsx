@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { fmtSyria } from '@/lib/datetime'
-import { Clock, Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil } from 'lucide-react'
+import { fmtSyria, damascusDateStr } from '@/lib/datetime'
+import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil } from 'lucide-react'
 import SessionEditModal, { type SessionLite } from '@/components/forms/SessionEditModal'
 
 interface Account { id: string; name: string; currency: string }
@@ -86,16 +86,27 @@ export default function ShiftsPage() {
       )
     }
     if (emps.success) setEmployees(emps.data || [])
-    // load my wallet assignments + role (for admin-tier UI gating)
+    // Resolve the current user + derive today's allowed wallets from the
+    // schedule (per-shift plan, not a permanent employee-level list).
     const meRes = await fetch('/api/me').catch(() => null)
     const meData = meRes ? await meRes.json().catch(() => ({})) : {}
     if (meData?.role) setMyRole(meData.role)
     const myUserId = meData?.id
     if (myUserId) {
-      const w = await fetch(`/api/employees/${myUserId}/wallets`).then(r => r.json()).catch(() => ({ data: [] }))
-      if (w.success) {
-        setAllowedWallets((w.data as Array<{ account: Account }>).map(x => x.account))
+      const today = damascusDateStr(new Date())
+      const [schedRes, accRes] = await Promise.all([
+        fetch(`/api/schedule?from=${today}&to=${today}`).then(r => r.json()).catch(() => ({ data: [] })),
+        fetch('/api/accounts').then(r => r.json()).catch(() => ({ data: [] })),
+      ])
+      const allAccounts: Account[] = accRes.success ? (accRes.data || []) : []
+      const myShifts: Array<{ userId: string; isDayOff: boolean; walletIds: string[] }> =
+        schedRes.success ? (schedRes.data || []) : []
+      const walletIds = new Set<string>()
+      for (const s of myShifts) {
+        if (s.userId !== myUserId || s.isDayOff) continue
+        for (const id of s.walletIds || []) walletIds.add(id)
       }
+      setAllowedWallets(allAccounts.filter(a => walletIds.has(a.id)))
     }
     setLoading(false)
   }, [])

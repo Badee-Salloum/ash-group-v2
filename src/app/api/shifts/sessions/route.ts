@@ -3,7 +3,69 @@ import { getSession, requireRole, audit } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
 import { tryAutoApproveHandover } from '@/lib/shifts/autoApprove'
+import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
 import { z } from 'zod'
+
+// Validate that the requested wallet IDs are allowed for this user at this
+// shift slot. Resolution order:
+//   1. If the user has a scheduled Shift for today (or `forDate`) at this
+//      `shiftNumber` with isDayOff=false, walletIds must be a SUBSET of that
+//      shift's planned wallets (ShiftWallet rows).
+//   2. Otherwise (ad-hoc check-in or no schedule), walletIds must reference
+//      active Account rows — any active wallet is acceptable.
+// Returns null on success, or { error, status } on failure.
+async function validateWalletsForShift(args: {
+  userId: string
+  shiftNumber: 'ONE' | 'TWO' | 'THREE' | null | undefined
+  walletIds: string[]
+  forDate?: Date
+}): Promise<{ error: string; status: number } | null> {
+  const { userId, shiftNumber, walletIds, forDate } = args
+  if (walletIds.length === 0) return null
+
+  if (shiftNumber) {
+    const dayKey = damascusDateStr(forDate ?? new Date())
+    const dayStart = damascusDayStartUtc(dayKey)
+    const dayEnd = damascusDayStartUtc(addDays(dayKey, 1))
+    const scheduled = await db.shift.findFirst({
+      where: {
+        userId,
+        shiftNumber,
+        date: { gte: dayStart, lt: dayEnd },
+        isDayOff: false,
+      },
+      include: { wallets: { select: { accountId: true } } },
+    })
+    if (scheduled) {
+      const allowed = new Set(
+        scheduled.wallets.map((w: { accountId: string }) => w.accountId),
+      )
+      const invalid = walletIds.filter(id => !allowed.has(id))
+      if (invalid.length > 0) {
+        return {
+          error: `${invalid.length} محفظة غير مُخطَّطة لهذه المناوبة. راجع جدول المناوبات.`,
+          status: 400,
+        }
+      }
+      return null
+    }
+  }
+
+  // Fallback: validate against active accounts only (no schedule constraint).
+  const active = await db.account.findMany({
+    where: { id: { in: walletIds }, isActive: true },
+    select: { id: true },
+  })
+  const activeSet = new Set(active.map((a: { id: string }) => a.id))
+  const invalid = walletIds.filter(id => !activeSet.has(id))
+  if (invalid.length > 0) {
+    return {
+      error: `${invalid.length} محفظة غير صالحة أو غير مُفعَّلة.`,
+      status: 400,
+    }
+  }
+  return null
+}
 
 // Module B: Shift sessions (Check-in/Check-out + handover).
 //
@@ -111,19 +173,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Validate wallet ids belong to employee's allowed list
-    if (data.walletIds.length > 0) {
-      const allowed = await db.employeeWalletAssignment.findMany({
-        where: { userId: session.userId, accountId: { in: data.walletIds } },
-        select: { accountId: true },
-      })
-      const allowedIds = new Set(allowed.map((a: typeof allowed[0]) => a.accountId))
-      const invalid = data.walletIds.filter((id: string) => !allowedIds.has(id))
-      if (invalid.length > 0) {
-        return NextResponse.json({
-          error: `غير مسموح بالعمل على ${invalid.length} محفظة من المختارة.`,
-        }, { status: 400 })
-      }
+    // Validate wallet ids against the scheduled shift's planned wallets
+    // (fallback to active-accounts check when there is no schedule today).
+    const walletError = await validateWalletsForShift({
+      userId: session.userId,
+      shiftNumber: data.shiftNumber ?? null,
+      walletIds: data.walletIds,
+    })
+    if (walletError) {
+      return NextResponse.json({ error: walletError.error }, { status: walletError.status })
     }
 
     const created = await db.shiftSession.create({
@@ -322,20 +380,23 @@ export async function PATCH(req: NextRequest) {
         }, { status: 403 })
       }
 
-      // Wallet edits replace the full set; validate against the user's allowed
-      // assignments (the same check the check-in flow runs).
+      // Wallet edits replace the full set. Validate against the target
+      // session's own scheduled shift (date + shiftNumber + user) rather than
+      // a per-user allowlist; admins can still edit any wallet on an open or
+      // recently-closed session via the fallback (no schedule = any active
+      // account is allowed).
       let walletDelta = false
       if (parsed.walletIds) {
-        const allowed = await db.employeeWalletAssignment.findMany({
-          where: { userId: target.userId, accountId: { in: parsed.walletIds } },
-          select: { accountId: true },
+        const sessionShiftNumber = (parsed.shiftNumber ?? target.shiftNumber) as
+          'ONE' | 'TWO' | 'THREE' | null
+        const walletError = await validateWalletsForShift({
+          userId: target.userId,
+          shiftNumber: sessionShiftNumber,
+          walletIds: parsed.walletIds,
+          forDate: target.startAt,
         })
-        const allowedIds = new Set(allowed.map((a: { accountId: string }) => a.accountId))
-        const invalid = parsed.walletIds.filter((id: string) => !allowedIds.has(id))
-        if (invalid.length > 0) {
-          return NextResponse.json({
-            error: `غير مسموح بـ ${invalid.length} محفظة من المختارة لهذا الموظف.`,
-          }, { status: 400 })
+        if (walletError) {
+          return NextResponse.json({ error: walletError.error }, { status: walletError.status })
         }
         walletDelta = true
       }

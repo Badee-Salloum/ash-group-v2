@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   sessionUpdate: vi.fn(),
   walletDeleteMany: vi.fn(),
   walletCreateMany: vi.fn(),
-  employeeWalletFindMany: vi.fn(),
+  shiftFindFirst: vi.fn(),
+  accountFindMany: vi.fn(),
   auditLogCreate: vi.fn(),
   getSession: vi.fn(),
 }))
@@ -16,7 +17,11 @@ vi.mock('@/lib/db/client', () => ({
   db: {
     shiftSession: { findUnique: mocks.sessionFindUnique, update: mocks.sessionUpdate },
     shiftSessionWallet: { deleteMany: mocks.walletDeleteMany, createMany: mocks.walletCreateMany },
-    employeeWalletAssignment: { findMany: mocks.employeeWalletFindMany },
+    // Per-shift wallet validation (Phase 3): walletIds are validated against
+    // the scheduled Shift's planned wallets, with a fallback to active
+    // Account rows when no schedule exists for the target slot.
+    shift: { findFirst: mocks.shiftFindFirst },
+    account: { findMany: mocks.accountFindMany },
     auditLog: { create: mocks.auditLogCreate },
     $transaction: (cb: (tx: unknown) => unknown) => cb({
       shiftSession: { update: mocks.sessionUpdate },
@@ -39,7 +44,8 @@ const sessionFindUniqueMock = mocks.sessionFindUnique
 const sessionUpdateMock = mocks.sessionUpdate
 const walletDeleteManyMock = mocks.walletDeleteMany
 const walletCreateManyMock = mocks.walletCreateMany
-const employeeWalletFindManyMock = mocks.employeeWalletFindMany
+const shiftFindFirstMock = mocks.shiftFindFirst
+const accountFindManyMock = mocks.accountFindMany
 const auditLogCreateMock = mocks.auditLogCreate
 const getSessionMock = mocks.getSession
 
@@ -57,7 +63,8 @@ beforeEach(() => {
   for (const m of [
     sessionFindUniqueMock, sessionUpdateMock,
     walletDeleteManyMock, walletCreateManyMock,
-    employeeWalletFindManyMock, auditLogCreateMock,
+    shiftFindFirstMock, accountFindManyMock,
+    auditLogCreateMock,
     getSessionMock,
   ]) m.mockReset()
   sessionUpdateMock.mockResolvedValue({ id: 'sess1' })
@@ -134,13 +141,15 @@ describe('PATCH /api/shifts/sessions edit — permissions', () => {
 })
 
 describe('PATCH /api/shifts/sessions edit — wallets', () => {
-  it('rejects walletIds that aren\'t in the employee\'s allowed list', async () => {
+  it('rejects walletIds not planned in the session\'s scheduled shift', async () => {
     getSessionMock.mockResolvedValue({ userId: 'u1', role: 'EMPLOYEE', email: 'a@b', name: 'X' })
     sessionFindUniqueMock.mockResolvedValueOnce({
       id: 'sess1', userId: 'u1', status: 'ACTIVE', shiftNumber: 'ONE', startAt: new Date(),
     })
-    // Allowed = only W1; user tries to set [W1, W_BAD]
-    employeeWalletFindManyMock.mockResolvedValueOnce([{ accountId: 'W1' }])
+    // Scheduled shift exists with only W1 planned; user tries to set [W1, W_BAD]
+    shiftFindFirstMock.mockResolvedValueOnce({
+      id: 'shift1', userId: 'u1', shiftNumber: 'ONE', wallets: [{ accountId: 'W1' }],
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const res = await PATCH(makeReq({ action: 'edit', sessionId: 'sess1', walletIds: ['W1', 'W_BAD'] }) as any)
     expect(res.status).toBe(400)
@@ -149,14 +158,15 @@ describe('PATCH /api/shifts/sessions edit — wallets', () => {
     expect(walletDeleteManyMock).not.toHaveBeenCalled()
   })
 
-  it('replaces the wallet set when all ids are allowed', async () => {
+  it('replaces the wallet set when all ids match the planned wallets', async () => {
     getSessionMock.mockResolvedValue({ userId: 'u1', role: 'EMPLOYEE', email: 'a@b', name: 'X' })
     sessionFindUniqueMock.mockResolvedValueOnce({
       id: 'sess1', userId: 'u1', status: 'ACTIVE', shiftNumber: 'ONE', startAt: new Date(),
     })
-    employeeWalletFindManyMock.mockResolvedValueOnce([
-      { accountId: 'W1' }, { accountId: 'W2' },
-    ])
+    shiftFindFirstMock.mockResolvedValueOnce({
+      id: 'shift1', userId: 'u1', shiftNumber: 'ONE',
+      wallets: [{ accountId: 'W1' }, { accountId: 'W2' }],
+    })
     const res = await PATCH(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       makeReq({ action: 'edit', sessionId: 'sess1', walletIds: ['W1', 'W2'] }) as any,
@@ -168,6 +178,21 @@ describe('PATCH /api/shifts/sessions edit — wallets', () => {
       { sessionId: 'sess1', accountId: 'W1' },
       { sessionId: 'sess1', accountId: 'W2' },
     ])
+  })
+
+  it('falls back to active-account validation when no schedule exists for the slot', async () => {
+    getSessionMock.mockResolvedValue({ userId: 'admin1', role: 'ADMIN', email: 'a@b', name: 'A' })
+    sessionFindUniqueMock.mockResolvedValueOnce({
+      id: 'sess1', userId: 'u1', status: 'ACTIVE', shiftNumber: 'ONE', startAt: new Date(),
+    })
+    // No scheduled shift → fall back to account check
+    shiftFindFirstMock.mockResolvedValueOnce(null)
+    accountFindManyMock.mockResolvedValueOnce([{ id: 'W1' }])  // only W1 is active
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await PATCH(makeReq({ action: 'edit', sessionId: 'sess1', walletIds: ['W1', 'W_INACTIVE'] }) as any)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toMatch(/1 محفظة/)
   })
 })
 

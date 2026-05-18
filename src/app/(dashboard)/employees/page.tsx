@@ -4,7 +4,7 @@ import Link from 'next/link'
 import DataTable, { Column } from '@/components/tables/DataTable'
 import { fmtSyriaDate } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
-import { UserPlus, Edit2, Trash2, GitBranch, X, Save, Loader2, User as UserIcon, Wallet, Key, Copy, Check } from 'lucide-react'
+import { UserPlus, Edit2, Trash2, GitBranch, X, Save, Loader2, User as UserIcon, Key, Copy, Check } from 'lucide-react'
 
 interface Employee extends Record<string, unknown> {
   id: string
@@ -230,9 +230,6 @@ export default function EmployeesPage() {
       key: 'actions', header: 'إجراء', sortable: false,
       render: row => (
         <div className="flex items-center gap-1">
-          <Link href={`/employees/${row.id}/wallets`} className="btn-ghost btn-sm p-1.5 text-emerald-600" title="إدارة المحافظ">
-            <Wallet size={13} />
-          </Link>
           <button onClick={() => openEdit(row)} className="btn-ghost btn-sm p-1.5 text-blue-600" title="تعديل">
             <Edit2 size={13} />
           </button>
