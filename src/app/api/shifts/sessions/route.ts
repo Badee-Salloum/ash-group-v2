@@ -230,7 +230,7 @@ export async function POST(req: NextRequest) {
 }
 
 const patchSchema = z.object({
-  action: z.enum(['requestEnd', 'approveHandover', 'cancel', 'edit']),
+  action: z.enum(['requestEnd', 'approveHandover', 'cancel', 'forceComplete', 'edit']),
   sessionId: z.string(),
   // Fields below are only read by the 'edit' action.
   shiftNumber: z.enum(['ONE', 'TWO', 'THREE']).nullable().optional(),
@@ -334,6 +334,39 @@ export async function PATCH(req: NextRequest) {
         data: { status: 'CANCELLED', endAt: new Date() },
       })
       await audit(session.userId, 'CANCEL_SHIFT', 'ShiftSession', sessionId, {})
+      return NextResponse.json({ success: true })
+    }
+
+    if (action === 'forceComplete') {
+      // Admin / Manager override: close an ACTIVE or PENDING_END session as
+      // COMPLETED without requiring a handover counterpart. Use case: the next
+      // employee never showed up, or the outgoing employee left without
+      // formally requesting end. Bypasses the normal handover validation.
+      requireRole(session, [UserRole.ADMIN, UserRole.MANAGER])
+      if (target.status !== 'ACTIVE' && target.status !== 'PENDING_END') {
+        return NextResponse.json({
+          error: 'الإنهاء اليدوي متاح فقط للجلسات النشطة أو بانتظار الإغلاق',
+        }, { status: 400 })
+      }
+      const now = new Date()
+      const duration = Math.round((now.getTime() - target.startAt.getTime()) / 60000)
+      await db.shiftSession.update({
+        where: { id: sessionId },
+        data: {
+          status: 'COMPLETED',
+          endAt: now,
+          durationMinutes: duration,
+          approvedById: session.userId,
+          approvedAt: now,
+          notes: target.notes
+            ? `${target.notes} · إنهاء يدوي`
+            : 'إنهاء يدوي من المشرف',
+        },
+      })
+      await audit(session.userId, 'FORCE_COMPLETE_SHIFT', 'ShiftSession', sessionId, {
+        previousStatus: target.status,
+        durationMinutes: duration,
+      })
       return NextResponse.json({ success: true })
     }
 

@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Save, Loader2, Sparkles, Trash2, ArrowRightLeft, X, Wallet, Check } from 'lucide-react'
+import { Save, Loader2, Sparkles, Trash2, X, Wallet, Check } from 'lucide-react'
 import { weekStartStr, weekDays, addDays, dayOfWeek } from '@/lib/datetime'
 
 type ShiftNum = 'ONE' | 'TWO' | 'THREE'
@@ -51,12 +51,6 @@ export default function SchedulePage() {
 
   // Wallet picker for a specific shift cell (null when closed)
   const [walletEditing, setWalletEditing] = useState<Shift | null>(null)
-
-  // Manual swap workflow
-  const [swapMode, setSwapMode] = useState(false)
-  const [swapFirst, setSwapFirst] = useState<Shift | null>(null)
-  const [swapping, setSwapping] = useState(false)
-  const [swapConfirm, setSwapConfirm] = useState<{ a: Shift; b: Shift } | null>(null)
 
   // The 7 YYYY-MM-DD day strings of the displayed week.
   const days = weekDays(weekStart)
@@ -168,54 +162,6 @@ export default function SchedulePage() {
     setWeekStart(weekStartStr(addDays(weekStart, delta * 7)))
   }
 
-  // ─── Swap handlers ────────────────────────────────────────────────────────
-  function exitSwap() {
-    setSwapMode(false); setSwapFirst(null); setSwapConfirm(null)
-  }
-
-  function pickSwapTarget(s: Shift) {
-    // Swap requires both shifts to be persisted (DB ids, not tmp- locals)
-    if (s.id.startsWith('tmp-')) {
-      setMsg('احفظ الجدول أولاً ثم استخدم وضع التبديل')
-      return
-    }
-    if (!swapFirst) {
-      setSwapFirst(s)
-      return
-    }
-    if (swapFirst.id === s.id) {
-      setSwapFirst(null)
-      return
-    }
-    if (swapFirst.userId === s.userId) {
-      setMsg('الموظف نفسه — اختر مناوبة لموظف مختلف')
-      return
-    }
-    setSwapConfirm({ a: swapFirst, b: s })
-  }
-
-  async function confirmSwap() {
-    if (!swapConfirm) return
-    setSwapping(true); setMsg('')
-    try {
-      const r = await fetch('/api/schedule/swap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftAId: swapConfirm.a.id, shiftBId: swapConfirm.b.id }),
-      })
-      const d = await r.json()
-      if (!d.success) throw new Error(d.error)
-      setMsg(d.message || 'تم التبديل')
-      exitSwap()
-      load()
-    } catch (e) {
-      setMsg('خطأ: ' + (e instanceof Error ? e.message : String(e)))
-      setSwapConfirm(null)
-    } finally {
-      setSwapping(false)
-    }
-  }
-
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -244,32 +190,11 @@ export default function SchedulePage() {
           <Sparkles size={14} /> اقتراح تلقائي
         </button>
         <div className="flex-1" />
-        {!swapMode ? (
-          <button onClick={() => setSwapMode(true)} className="btn-secondary btn-sm" title="تبديل موظفَين بين مناوبتين">
-            <ArrowRightLeft size={14} /> وضع التبديل
-          </button>
-        ) : (
-          <button onClick={exitSwap} className="btn-secondary btn-sm bg-amber-50 text-amber-700 border-amber-200">
-            <X size={14} /> إنهاء التبديل
-          </button>
-        )}
-        <button onClick={handleSave} disabled={saving || shifts.length === 0 || swapMode} className="btn-primary btn-sm">
+        <button onClick={handleSave} disabled={saving || shifts.length === 0} className="btn-primary btn-sm">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
           حفظ ({shifts.length})
         </button>
       </div>
-
-      {swapMode && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-2.5 rounded-lg flex items-center gap-2">
-          <ArrowRightLeft size={14} />
-          {swapFirst
-            ? <>تم اختيار: <strong className="mx-1">{swapFirst.user.name}</strong> — اختر المناوبة المقابلة (لموظف آخر)</>
-            : 'اختر المناوبة الأولى من الجدول'}
-          {swapFirst && (
-            <button onClick={() => setSwapFirst(null)} className="ms-2 text-xs underline">إلغاء الاختيار</button>
-          )}
-        </div>
-      )}
 
       {msg && (
         <div className={`text-sm px-4 py-2 rounded-lg ${msg.startsWith('خطأ') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
@@ -310,88 +235,66 @@ export default function SchedulePage() {
                     return (
                       <td key={i} className="px-2 py-2 align-top">
                         <div className="space-y-1.5">
-                          {list.map(s => {
-                            const isSwapFirst = swapFirst?.id === s.id
-                            const inSwapMode = swapMode && !s.isDayOff
-                            const isPersisted = !s.id.startsWith('tmp-')
-                            return (
-                              <div
-                                key={s.id}
-                                onClick={inSwapMode ? () => pickSwapTarget(s) : undefined}
-                                className={`border rounded-lg px-2 py-1 text-xs transition-all ${
-                                  s.isDayOff
-                                    ? 'bg-gray-100 border-gray-300 opacity-75'
-                                    : isSwapFirst
-                                    ? 'bg-amber-100 border-amber-400 ring-2 ring-amber-300'
-                                    : inSwapMode && isPersisted
-                                    ? 'bg-blue-50 border-blue-200 cursor-pointer hover:bg-blue-100 hover:border-blue-300'
-                                    : inSwapMode && !isPersisted
-                                    ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
-                                    : 'bg-blue-50 border-blue-200'
-                                }`}
-                                title={
-                                  s.isDayOff
-                                    ? 'في إجازة'
-                                    : inSwapMode && !isPersisted
-                                    ? 'احفظ أولاً ثم بدّل'
-                                    : undefined
-                                }
-                              >
-                                <div className="flex items-center gap-1">
-                                  <span className={`flex-1 truncate font-medium ${s.isDayOff ? 'line-through text-gray-500' : ''}`}>
-                                    {s.user?.name || '?'}
+                          {list.map(s => (
+                            <div
+                              key={s.id}
+                              className={`border rounded-lg px-2 py-1 text-xs ${
+                                s.isDayOff
+                                  ? 'bg-gray-100 border-gray-300 opacity-75'
+                                  : 'bg-blue-50 border-blue-200'
+                              }`}
+                              title={s.isDayOff ? 'في إجازة' : undefined}
+                            >
+                              <div className="flex items-center gap-1">
+                                <span className={`flex-1 truncate font-medium ${s.isDayOff ? 'line-through text-gray-500' : ''}`}>
+                                  {s.user?.name || '?'}
+                                </span>
+                                {s.isDayOff && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                    إجازة
                                   </span>
-                                  {s.isDayOff && (
-                                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
-                                      إجازة
-                                    </span>
-                                  )}
-                                  {!swapMode && (
+                                )}
+                                <button
+                                  onClick={() => remove(s.id)}
+                                  className="text-red-500 hover:text-red-700"
+                                  title="حذف"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                              {/* Wallet chips + edit button */}
+                              {!s.isDayOff && (
+                                <div className="mt-1 flex items-center gap-1 flex-wrap">
+                                  {s.walletIds.length === 0 ? (
                                     <button
-                                      onClick={() => remove(s.id)}
-                                      className="text-red-500 hover:text-red-700"
-                                      title="حذف"
+                                      onClick={() => setWalletEditing(s)}
+                                      className="text-[10px] text-gray-500 hover:text-blue-600 flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-gray-300 hover:border-blue-400"
                                     >
-                                      <Trash2 size={11} />
+                                      <Wallet size={10} /> اختر محافظ
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => setWalletEditing(s)}
+                                      className="text-[10px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ring-1 ring-emerald-200 flex items-center gap-1 px-1.5 py-0.5 rounded"
+                                      title={s.walletIds.map(id => accountById.get(id)?.name).filter(Boolean).join(' · ')}
+                                    >
+                                      <Wallet size={10} /> {s.walletIds.length} محفظة
                                     </button>
                                   )}
                                 </div>
-                                {/* Wallet chips + edit button */}
-                                {!s.isDayOff && !swapMode && (
-                                  <div className="mt-1 flex items-center gap-1 flex-wrap">
-                                    {s.walletIds.length === 0 ? (
-                                      <button
-                                        onClick={() => setWalletEditing(s)}
-                                        className="text-[10px] text-gray-500 hover:text-blue-600 flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-gray-300 hover:border-blue-400"
-                                      >
-                                        <Wallet size={10} /> اختر محافظ
-                                      </button>
-                                    ) : (
-                                      <button
-                                        onClick={() => setWalletEditing(s)}
-                                        className="text-[10px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ring-1 ring-emerald-200 flex items-center gap-1 px-1.5 py-0.5 rounded"
-                                        title={s.walletIds.map(id => accountById.get(id)?.name).filter(Boolean).join(' · ')}
-                                      >
-                                        <Wallet size={10} /> {s.walletIds.length} محفظة
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                          {!swapMode && (
-                            <select
-                              value=""
-                              onChange={e => assign(dateStr, sn, e.target.value)}
-                              className="text-[10px] w-full border border-gray-200 rounded px-1 py-0.5 bg-white hover:bg-gray-50"
-                            >
-                              <option value="">+ إضافة</option>
-                              {employees.map(em => (
-                                <option key={em.id} value={em.id}>{em.name}</option>
-                              ))}
-                            </select>
-                          )}
+                              )}
+                            </div>
+                          ))}
+                          <select
+                            value=""
+                            onChange={e => assign(dateStr, sn, e.target.value)}
+                            className="text-[10px] w-full border border-gray-200 rounded px-1 py-0.5 bg-white hover:bg-gray-50"
+                          >
+                            <option value="">+ إضافة</option>
+                            {employees.map(em => (
+                              <option key={em.id} value={em.id}>{em.name}</option>
+                            ))}
+                          </select>
                           {list.length > 0 && (
                             <div className="text-[9px] text-gray-400 text-center mt-1 font-medium">
                               عاملون: {workingCount} · إجازة: {offCount}
@@ -419,50 +322,6 @@ export default function SchedulePage() {
             setWalletEditing(null)
           }}
         />
-      )}
-
-      {/* Swap confirmation modal */}
-      {swapConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => !swapping && setSwapConfirm(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <ArrowRightLeft size={16} /> تأكيد التبديل
-              </h3>
-              <button onClick={() => !swapping && setSwapConfirm(null)} className="text-gray-400 hover:text-gray-600">
-                <X size={16} />
-              </button>
-            </div>
-            <div className="p-5 space-y-3 text-sm">
-              <p className="text-gray-600">سيتم تبديل المناوبتين التاليتين:</p>
-              <div className="grid grid-cols-1 gap-2">
-                <div className="border border-amber-200 bg-amber-50 rounded-lg p-3">
-                  <p className="font-medium text-gray-800">{swapConfirm.a.user.name}</p>
-                  <p className="text-xs text-gray-500 font-mono mt-0.5">
-                    {swapConfirm.a.date.slice(0, 10)} · شيفت {swapConfirm.a.shiftNumber === 'ONE' ? 'أول' : swapConfirm.a.shiftNumber === 'TWO' ? 'ثاني' : 'ثالث'}
-                  </p>
-                </div>
-                <div className="text-center text-gray-400 text-xs">↕ تبديل</div>
-                <div className="border border-amber-200 bg-amber-50 rounded-lg p-3">
-                  <p className="font-medium text-gray-800">{swapConfirm.b.user.name}</p>
-                  <p className="text-xs text-gray-500 font-mono mt-0.5">
-                    {swapConfirm.b.date.slice(0, 10)} · شيفت {swapConfirm.b.shiftNumber === 'ONE' ? 'أول' : swapConfirm.b.shiftNumber === 'TWO' ? 'ثاني' : 'ثالث'}
-                  </p>
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-500">
-                * المحافظ تبقى مع المناوبة (الموظف الجديد يستلم نفس المحافظ المُخطَّطة للنوبة).
-              </p>
-            </div>
-            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
-              <button onClick={() => setSwapConfirm(null)} disabled={swapping} className="btn-secondary btn-sm">إلغاء</button>
-              <button onClick={confirmSwap} disabled={swapping} className="btn-primary btn-sm">
-                {swapping ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                تأكيد التبديل
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   )

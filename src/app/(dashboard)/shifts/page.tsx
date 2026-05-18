@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { fmtSyria, damascusDateStr } from '@/lib/datetime'
-import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil } from 'lucide-react'
+import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil, StopCircle } from 'lucide-react'
 import SessionEditModal, { type SessionLite } from '@/components/forms/SessionEditModal'
 
 interface Account { id: string; name: string; currency: string }
@@ -185,8 +185,14 @@ export default function ShiftsPage() {
     }
   }
 
-  async function handleAction(sessionId: string, action: 'requestEnd' | 'approveHandover' | 'cancel') {
-    if (action === 'cancel' && !confirm('إلغاء الجلسة؟')) return
+  async function handleAction(
+    sessionId: string,
+    action: 'requestEnd' | 'approveHandover' | 'cancel' | 'forceComplete',
+  ) {
+    if (action === 'cancel' && !confirm('إلغاء الجلسة؟ ستظهر كـ "ملغاة" في السجلات.')) return
+    if (action === 'forceComplete' && !confirm(
+      'إنهاء الجلسة يدوياً وتعليمها كمكتملة؟\n\nيستخدم هذا الإجراء عند تجاوز انتظار التسليم — مثلاً عندما لا يصل الموظف التالي. سيتم تجاهل أي تعارض مع قواعد التسليم العادية.',
+    )) return
     try {
       const res = await fetch('/api/shifts/sessions', {
         method: 'PATCH',
@@ -200,6 +206,8 @@ export default function ShiftsPage() {
       alert('خطأ: ' + (e instanceof Error ? e.message : String(e)))
     }
   }
+
+  const isAdminTier = myRole === 'ADMIN' || myRole === 'MANAGER'
 
   if (loading) return (
     <div className="flex items-center justify-center p-20 text-gray-400 gap-2">
@@ -272,9 +280,20 @@ export default function ShiftsPage() {
                     </p>
                   </div>
                 </div>
-                <button onClick={() => handleAction(s.id, 'approveHandover')} className="btn-primary btn-sm">
-                  <Check size={13} /> اعتماد التبديل
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleAction(s.id, 'approveHandover')} className="btn-primary btn-sm">
+                    <Check size={13} /> اعتماد التبديل
+                  </button>
+                  {isAdminTier && (
+                    <button
+                      onClick={() => handleAction(s.id, 'cancel')}
+                      className="btn-ghost btn-sm text-rose-600 hover:bg-rose-50"
+                      title="رفض طلب التبديل وإلغاء الجلسة"
+                    >
+                      <X size={13} /> رفض
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -307,6 +326,15 @@ export default function ShiftsPage() {
                 <div className="flex items-center gap-2">
                   <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
                   <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
+                  {isAdminTier && (
+                    <button
+                      onClick={() => handleAction(s.id, 'forceComplete')}
+                      className="btn-ghost p-1.5 text-gray-500 hover:text-emerald-600"
+                      title="إنهاء يدوياً (إغلاق الجلسة بدون انتظار تسليم)"
+                    >
+                      <StopCircle size={14} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditingSession(s)}
                     className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
