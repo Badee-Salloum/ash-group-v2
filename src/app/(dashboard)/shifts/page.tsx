@@ -207,6 +207,43 @@ export default function ShiftsPage() {
     }
   }
 
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'reject' | 'forceComplete' | null>(null)
+
+  async function handleBulk(
+    action: 'approveHandover' | 'cancel' | 'forceComplete',
+    targets: Sess[],
+    confirmMsg: string,
+    busyKey: 'approve' | 'reject' | 'forceComplete',
+  ) {
+    if (targets.length === 0) return
+    if (!confirm(confirmMsg)) return
+    setBulkBusy(busyKey)
+    let ok = 0
+    const failures: string[] = []
+    // Sequential to avoid hammering the API and to keep audit ordering sane.
+    for (const s of targets) {
+      try {
+        const res = await fetch('/api/shifts/sessions', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, sessionId: s.id }),
+        })
+        const d = await res.json()
+        if (d.success) ok++
+        else failures.push(`${s.user.name}: ${d.error || 'فشل'}`)
+      } catch (e) {
+        failures.push(`${s.user.name}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    setBulkBusy(null)
+    await load()
+    if (failures.length > 0) {
+      alert(`نجح: ${ok}\nفشل: ${failures.length}\n\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? '\n…' : ''}`)
+    } else {
+      alert(`تم تنفيذ الإجراء على ${ok} جلسة بنجاح`)
+    }
+  }
+
   const isAdminTier = myRole === 'ADMIN' || myRole === 'MANAGER'
 
   if (loading) return (
@@ -262,10 +299,42 @@ export default function ShiftsPage() {
       {/* Pending approvals (Manager view) */}
       {pendingApprovals.length > 0 && (
         <div className="card p-4">
-          <h2 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-            <ArrowRightLeft size={16} className="text-blue-500" />
-            موافقات تبديل المناوبات المعلقة ({pendingApprovals.length})
-          </h2>
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <h2 className="font-bold text-gray-800 flex items-center gap-2">
+              <ArrowRightLeft size={16} className="text-blue-500" />
+              موافقات تبديل المناوبات المعلقة ({pendingApprovals.length})
+            </h2>
+            {isAdminTier && pendingApprovals.length > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleBulk(
+                    'approveHandover',
+                    pendingApprovals,
+                    `اعتماد كل التبديلات المعلقة (${pendingApprovals.length})؟\n\nسيتم تجاوز فحص المحافظ والجدول لكل منها.`,
+                    'approve',
+                  )}
+                  disabled={bulkBusy !== null}
+                  className="btn-primary btn-sm"
+                >
+                  {bulkBusy === 'approve' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  اعتماد الكل
+                </button>
+                <button
+                  onClick={() => handleBulk(
+                    'cancel',
+                    pendingApprovals,
+                    `رفض كل التبديلات المعلقة (${pendingApprovals.length})؟\n\nستُلغى جميعها وتظهر كـ "ملغاة" في السجلات.`,
+                    'reject',
+                  )}
+                  disabled={bulkBusy !== null}
+                  className="btn-ghost btn-sm text-rose-600 hover:bg-rose-50"
+                >
+                  {bulkBusy === 'reject' ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                  رفض الكل
+                </button>
+              </div>
+            )}
+          </div>
           <div className="space-y-2">
             {pendingApprovals.map(s => (
               <div key={s.id} className="border border-blue-200 bg-blue-50/30 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
@@ -302,7 +371,30 @@ export default function ShiftsPage() {
 
       {/* Active sessions across all employees */}
       <div className="card p-4">
-        <h2 className="font-bold text-gray-800 mb-3">الجلسات النشطة ({allActive.length})</h2>
+        {(() => {
+          const pendingEndCount = allActive.filter(s => s.status === 'PENDING_END').length
+          return (
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <h2 className="font-bold text-gray-800">الجلسات النشطة ({allActive.length})</h2>
+              {isAdminTier && pendingEndCount > 1 && (
+                <button
+                  onClick={() => handleBulk(
+                    'forceComplete',
+                    allActive.filter(s => s.status === 'PENDING_END'),
+                    `إنهاء كل الجلسات المعلّقة بانتظار الإغلاق (${pendingEndCount})؟\n\nستُغلق جميعها كـ "مكتملة" بدون انتظار التسليم.`,
+                    'forceComplete',
+                  )}
+                  disabled={bulkBusy !== null}
+                  className="btn-secondary btn-sm"
+                  title="إنهاء يدوي لكل الجلسات المعلّقة بانتظار التسليم"
+                >
+                  {bulkBusy === 'forceComplete' ? <Loader2 size={13} className="animate-spin" /> : <StopCircle size={13} />}
+                  إنهاء كل المعلّقة ({pendingEndCount})
+                </button>
+              )}
+            </div>
+          )
+        })()}
         {allActive.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-6">لا توجد جلسات نشطة الآن</p>
         ) : (
