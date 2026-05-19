@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
 
 export interface SessionLite {
@@ -22,8 +22,13 @@ export interface WalletAccount {
 
 interface Props {
   session: SessionLite
-  /** All wallets this employee may be assigned to (server-validated). */
-  allowedWallets: WalletAccount[]
+  /**
+   * Optional seed list of wallets to show before the modal fetches the
+   * session-specific allowed wallets. The modal always re-fetches from
+   * /api/shifts/sessions/:id/allowed-wallets (which mirrors backend
+   * validation: scheduled-shift wallets, else all active accounts).
+   */
+  allowedWallets?: WalletAccount[]
   /** Pass true to expose admin-only fields (shiftNumber, time corrections). */
   isAdminTier: boolean
   onClose: () => void
@@ -61,6 +66,32 @@ export default function SessionEditModal({
   const [endAt, setEndAt] = useState(toLocalInput(session.endAt))
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  // Fetch the wallets the BACKEND will accept for *this* session (mirrors
+  // validateWalletsForShift). The seed prop is only a placeholder until the
+  // real list arrives — without this fetch the modal showed wallets from the
+  // current logged-in user's schedule instead of the session-user's.
+  const [fetchedWallets, setFetchedWallets] = useState<WalletAccount[] | null>(null)
+  const [walletSource, setWalletSource] = useState<'schedule' | 'all-active' | null>(null)
+  const [walletsLoading, setWalletsLoading] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    setWalletsLoading(true)
+    fetch(`/api/shifts/sessions/${session.id}/allowed-wallets`)
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return
+        if (d.success) {
+          setFetchedWallets(d.wallets || [])
+          setWalletSource(d.source || null)
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setWalletsLoading(false) })
+    return () => { cancelled = true }
+  }, [session.id])
+
+  const wallets = fetchedWallets ?? allowedWallets ?? []
 
   function toggleWallet(id: string) {
     const next = new Set(walletIds)
@@ -122,14 +153,28 @@ export default function SessionEditModal({
             />
           </div>
 
-          {/* Wallets — everyone (validated server-side against the user's assignments) */}
+          {/* Wallets — backend validates against the session-user's scheduled
+              shift (or any active account when there is no schedule). */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">المحافظ</label>
-            {allowedWallets.length === 0 ? (
-              <p className="text-xs text-gray-400">لا توجد محافظ مسموح بها لهذا الموظف.</p>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">المحافظ</label>
+              {walletSource && !walletsLoading && (
+                <span className="text-[10px] text-gray-400">
+                  {walletSource === 'schedule'
+                    ? 'مأخوذة من خطة المناوبة'
+                    : 'لا توجد خطة — كل الحسابات المُفعَّلة'}
+                </span>
+              )}
+            </div>
+            {walletsLoading ? (
+              <div className="flex items-center gap-2 text-xs text-gray-400 py-3">
+                <Loader2 size={12} className="animate-spin" /> جاري تحميل المحافظ...
+              </div>
+            ) : wallets.length === 0 ? (
+              <p className="text-xs text-gray-400">لا توجد محافظ متاحة لهذه الجلسة.</p>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                {allowedWallets.map(w => {
+                {wallets.map(w => {
                   const checked = walletIds.has(w.id)
                   return (
                     <label key={w.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${
