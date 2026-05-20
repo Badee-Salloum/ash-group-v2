@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { ChevronRight, ChevronLeft, Loader2, Clock, RefreshCw } from 'lucide-react'
 import { fmtSyria, weekStartStr, weekDays, addDays, dayOfWeek, damascusDateStr } from '@/lib/datetime'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface DayCell {
   dayIndex: number
@@ -135,9 +136,8 @@ export default function AttendancePage() {
           <Loader2 size={28} className="mx-auto animate-spin mb-2" /> جاري التحميل...
         </div>
       ) : rows.length === 0 ? (
-        <div className="card p-12 text-center text-gray-400">
-          <Clock size={28} className="mx-auto mb-2 opacity-30" />
-          لا يوجد موظفون
+        <div className="card">
+          <EmptyState icon={Clock} title="لا يوجد موظفون" hint="لا يوجد موظفون بدوام لعرض حضورهم لهذا الأسبوع." />
         </div>
       ) : (
         <>

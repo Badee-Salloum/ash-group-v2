@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Search, Inbox, Loader2, CheckCircle2, MessageSquareWarning, RotateCcw } from 'lucide-react'
 import { fmtSyriaDate } from '@/lib/datetime'
 import { FollowUpModal } from './_components/FollowUpModal'
+import { EmptyState } from '@/components/ui/EmptyState'
 import {
   FollowUpRow, AssigneeUser, FollowUpFilters, FollowUpStatus, FollowUpCategory,
   STATUS_LABELS, CATEGORY_LABELS, TYPE_LABELS,
@@ -220,9 +221,8 @@ export default function FollowUpsPage() {
           <Loader2 className="animate-spin" size={24} />
         </div>
       ) : rows.length === 0 ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 py-16 text-center">
-          <Inbox size={48} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-slate-500">لا توجد متابعات مطابقة للفلاتر الحالية</p>
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-slate-100 dark:border-gray-800">
+          <EmptyState icon={Inbox} title="لا توجد متابعات مطابقة للفلاتر الحالية" hint="جرّب تغيير الفلاتر أو مسحها لعرض كل المتابعات." />
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
