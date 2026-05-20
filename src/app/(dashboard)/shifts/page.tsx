@@ -3,6 +3,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { fmtSyria } from '@/lib/datetime'
 import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil, StopCircle, CalendarClock } from 'lucide-react'
 import SessionEditModal, { type SessionLite } from '@/components/forms/SessionEditModal'
+import { useToast } from '@/components/ui/Toast'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface Account { id: string; name: string; currency: string }
 interface Sess {
@@ -22,6 +24,8 @@ interface MyShift {
   shiftNumber: 'ONE' | 'TWO' | 'THREE'
   windowLabel: string
   handoverNames: string[]
+  checkinOpen: boolean
+  opensAt: string | null
 }
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
@@ -51,6 +55,7 @@ export default function ShiftsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [msg, setMsg] = useState('')
   const [bulkBusy, setBulkBusy] = useState<'approve' | 'reject' | 'forceComplete' | null>(null)
+  const toast = useToast()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -105,6 +110,9 @@ export default function ShiftsPage() {
       if (!d.success) throw new Error(d.error)
       if (d.data?.autoApprovalReason && !d.data.autoApproved) {
         setMsg(d.data.autoApprovalReason)
+        toast('تم إرسال طلب الدخول — بانتظار الاعتماد', 'info')
+      } else {
+        toast('تم تسجيل الدخول')
       }
       load()
     } catch (e) {
@@ -130,9 +138,16 @@ export default function ShiftsPage() {
       })
       const d = await res.json()
       if (!d.success) throw new Error(d.error)
+      const ACTION_DONE: Record<typeof action, string> = {
+        requestEnd: 'تم إرسال طلب الخروج',
+        approveHandover: 'تم اعتماد التسليم',
+        cancel: 'تم إلغاء الجلسة',
+        forceComplete: 'تم إنهاء الجلسة',
+      }
+      toast(ACTION_DONE[action])
       load()
     } catch (e) {
-      alert('خطأ: ' + (e instanceof Error ? e.message : String(e)))
+      toast('خطأ: ' + (e instanceof Error ? e.message : String(e)), 'error')
     }
   }
 
@@ -235,6 +250,11 @@ export default function ShiftsPage() {
                         التسليم من: {myShift.handoverNames.join('، ')}
                       </p>
                     )}
+                    {!myShift.checkinOpen && myShift.opensAt && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        يفتح تسجيل الدخول الساعة {fmtSyria(myShift.opensAt, false).slice(11)}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p className="text-sm text-gray-500">لا توجد مناوبة مجدولة لك في هذا الوقت.</p>
@@ -242,7 +262,7 @@ export default function ShiftsPage() {
               </div>
               <button
                 onClick={handleCheckIn}
-                disabled={submitting || !myShift}
+                disabled={submitting || !myShift || !myShift.checkinOpen}
                 className="btn-primary"
               >
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
@@ -367,7 +387,11 @@ export default function ShiftsPage() {
               )
             })()}
             {allActive.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-6">لا توجد جلسات نشطة الآن</p>
+              <EmptyState
+                icon={LogIn}
+                title="لا توجد جلسات نشطة الآن"
+                hint="ستظهر هنا جلسات الموظفين بمجرد تسجيل دخولهم."
+              />
             ) : (
               <div className="space-y-2">
                 {allActive.map(s => (
