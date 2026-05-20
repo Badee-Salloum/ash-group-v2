@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db/client'
-import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
+import { damascusDateStr, dateColumnUtc, addDays } from '@/lib/datetime'
 
 // GET /api/shifts/sessions/:id/allowed-wallets
 // Returns the wallets that may be picked when editing this session's wallets.
@@ -40,8 +40,8 @@ export async function GET(
 
     if (target.shiftNumber) {
       const dayKey = damascusDateStr(target.startAt)
-      const dayStart = damascusDayStartUtc(dayKey)
-      const dayEnd = damascusDayStartUtc(addDays(dayKey, 1))
+      const dayStart = dateColumnUtc(dayKey)
+      const dayEnd = dateColumnUtc(addDays(dayKey, 1))
       const scheduled = await db.shift.findFirst({
         where: {
           userId: target.userId,

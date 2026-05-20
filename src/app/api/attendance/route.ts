@@ -3,7 +3,7 @@ import { getSession, requireRole } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
 import { buildPlannedMatrix, derivePlannedFields } from '@/lib/attendance/planned'
-import { weekStartStr, weekDays, damascusDayStartUtc, damascusDateStr, addDays } from '@/lib/datetime'
+import { weekStartStr, weekDays, damascusDayStartUtc, dateColumnUtc, damascusDateStr, addDays } from '@/lib/datetime'
 
 // Attendance matrix — one row per active employee, one cell per day in the
 // selected week. Each cell summarises that day's shift sessions.
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
   const plannedShifts = await db.shift.findMany({
     where: {
       userId: { in: employeeIds },
-      date: { gte: damascusDayStartUtc(dayKeys[0]), lt: windowEnd },
+      date: { gte: dateColumnUtc(dayKeys[0]), lt: dateColumnUtc(addDays(dayKeys[6], 1)) },
     },
     select: { userId: true, date: true, shiftNumber: true, isDayOff: true },
   })

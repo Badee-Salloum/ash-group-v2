@@ -25,7 +25,7 @@
 
 import { db } from '@/lib/db/client'
 import { audit } from '@/lib/auth'
-import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
+import { damascusDateStr, dateColumnUtc, addDays } from '@/lib/datetime'
 
 export type AutoApproveTrigger =
   | { incomingSessionId: string }
@@ -136,8 +136,8 @@ export async function tryAutoApproveHandover(
       userId: incoming.userId,
       shiftNumber: incoming.shiftNumber as 'ONE' | 'TWO' | 'THREE',
       date: {
-        gte: damascusDayStartUtc(todayKey),
-        lt: damascusDayStartUtc(addDays(todayKey, 1)),
+        gte: dateColumnUtc(todayKey),
+        lt: dateColumnUtc(addDays(todayKey, 1)),
       },
       isDayOff: false,
     },

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { UserRole } from '@/lib/db/prisma-types'
 import { db } from '@/lib/db/client'
-import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
+import { damascusDateStr, dateColumnUtc, addDays } from '@/lib/datetime'
 import { checkinWindowUtc, type ShiftNumber } from '@/lib/shifts/shiftWindow'
 
 // Returns the caller's scheduled shift for today (or null). Used by the
@@ -37,8 +37,8 @@ export async function GET(req: NextRequest) {
   const nowMs = Date.now()
   const today = damascusDateStr(new Date())
   const yesterday = addDays(today, -1)
-  const rangeGte = damascusDayStartUtc(yesterday)
-  const rangeLt = damascusDayStartUtc(addDays(today, 1))
+  const rangeGte = dateColumnUtc(yesterday)
+  const rangeLt = dateColumnUtc(addDays(today, 1))
   const candidates = await db.shift.findMany({
     where: {
       userId: targetUserId,

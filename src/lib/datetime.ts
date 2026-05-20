@@ -95,9 +95,19 @@ export function weekDays(weekStart: string): string[] {
 }
 
 // The UTC instant at which a Damascus calendar day begins (00:00:00 +03:00).
-// Use this to build DB query windows that align with Damascus calendar days.
+// Use this ONLY to build query windows over `timestamp`/`DateTime` columns
+// (e.g. ShiftSession.startAt). It is the WRONG bound for a Prisma `@db.Date`
+// (date-only) column: Prisma truncates the time, so 00:00+03:00 (= 21:00 UTC
+// the prior day) collapses to the PREVIOUS calendar date.
 export function damascusDayStartUtc(dateStr: string): Date {
   return new Date(`${dateStr}T00:00:00+03:00`)
+}
+
+// The bound to use when filtering a Prisma `@db.Date` (date-only) column for
+// a given calendar day (e.g. Shift.date). A date-only column ignores the time
+// part, so the bound must be plain UTC-midnight of that exact calendar date.
+export function dateColumnUtc(dateStr: string): Date {
+  return new Date(`${dateStr}T00:00:00.000Z`)
 }
 
 // Minutes since midnight (0..1439) for a timestamp, in Damascus time. Used to

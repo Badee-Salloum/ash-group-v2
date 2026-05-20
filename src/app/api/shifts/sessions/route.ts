@@ -3,7 +3,7 @@ import { getSession, requireRole, audit } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
 import { tryAutoApproveHandover } from '@/lib/shifts/autoApprove'
-import { damascusDateStr, damascusDayStartUtc, addDays, fmtSyria } from '@/lib/datetime'
+import { damascusDateStr, dateColumnUtc, addDays, fmtSyria } from '@/lib/datetime'
 import { checkinWindowUtc, type ShiftNumber } from '@/lib/shifts/shiftWindow'
 import { z } from 'zod'
 
@@ -26,8 +26,8 @@ async function validateWalletsForShift(args: {
 
   if (shiftNumber) {
     const dayKey = damascusDateStr(forDate ?? new Date())
-    const dayStart = damascusDayStartUtc(dayKey)
-    const dayEnd = damascusDayStartUtc(addDays(dayKey, 1))
+    const dayStart = dateColumnUtc(dayKey)
+    const dayEnd = dateColumnUtc(addDays(dayKey, 1))
     const scheduled = await db.shift.findFirst({
       where: {
         userId,
@@ -158,8 +158,8 @@ export async function POST(req: NextRequest) {
         userId: session.userId,
         isDayOff: false,
         date: {
-          gte: damascusDayStartUtc(yesterday),
-          lt: damascusDayStartUtc(addDays(today, 1)),
+          gte: dateColumnUtc(yesterday),
+          lt: dateColumnUtc(addDays(today, 1)),
         },
       },
       include: { wallets: { select: { accountId: true } } },
