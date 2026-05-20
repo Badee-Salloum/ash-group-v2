@@ -10,6 +10,7 @@ const STATUS_AR: Record<TransactionStatus, string> = {
   PENDING_P: 'المنصة فقط',
   DISCREPANCY: 'فارق في المبلغ',
   WASTE: 'هدر',
+  RETURNS: 'مرتجعات',
 }
 
 export async function GET(req: NextRequest) {

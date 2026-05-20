@@ -25,8 +25,10 @@ export type CategoryKind = 'internal' | 'gross' | 'waste' | 'extras'
 
 export const STATUS_LABELS_DASH: Record<string, string> = {
   MATCHED: 'مطابقة', PENDING_SC: 'شام كاش فقط', PENDING_P: 'المنصة فقط', DISCREPANCY: 'فارق في المبلغ', WASTE: 'هدر',
+  RETURNS: 'مرتجعات',
 }
 export const STATUS_COLORS_DASH: Record<string, string> = {
   MATCHED: 'text-green-700 bg-green-50', PENDING_SC: 'text-amber-700 bg-amber-50',
   PENDING_P: 'text-blue-700 bg-blue-50', DISCREPANCY: 'text-red-700 bg-red-50', WASTE: 'text-gray-700 bg-gray-100',
+  RETURNS: 'text-indigo-700 bg-indigo-50',
 }

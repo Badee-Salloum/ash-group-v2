@@ -291,6 +291,7 @@ export default function EmployeesPage() {
         columns={columns}
         loading={loading}
         exportFilename="employees"
+        tableId="employees"
         emptyMessage="لا يوجد موظفون"
       />
 

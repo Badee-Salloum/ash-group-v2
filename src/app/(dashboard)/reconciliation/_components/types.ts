@@ -1,4 +1,4 @@
-export type TxStatus = 'MATCHED' | 'PENDING_SC' | 'PENDING_P' | 'DISCREPANCY' | 'WASTE'
+export type TxStatus = 'MATCHED' | 'PENDING_SC' | 'PENDING_P' | 'DISCREPANCY' | 'WASTE' | 'RETURNS'
 export type TxType = 'DEPOSIT' | 'WITHDRAWAL'
 export type ReviewCat = 'THEFT' | 'WASTE' | 'EXTRA' | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR' | 'COMPLAINT' | 'INTERNAL_TRANSFER' | 'OTHER'
 export type FollowUpStat = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
@@ -33,6 +33,7 @@ export const STATUS_LABELS: Record<TxStatus, { label: string; cls: string }> = {
   PENDING_P:   { label: 'المنصة فقط',         cls: 'badge-pending-p' },
   DISCREPANCY: { label: 'فارق في المبلغ',     cls: 'badge-discrepancy' },
   WASTE:       { label: 'هدر',                cls: 'badge-waste' },
+  RETURNS:     { label: 'مرتجعات',            cls: 'badge-returns' },
 }
 
 export const TYPE_LABELS: Record<TxType, string> = {

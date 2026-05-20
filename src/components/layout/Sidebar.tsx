@@ -84,12 +84,14 @@ void FileSpreadsheet // reserve icon for future "تقارير" if needed
 interface SidebarProps {
   role: UserRole
   open?: boolean
+  /** Desktop: when true the whole sidebar is hidden (collapsed to zero width). */
+  hidden?: boolean
   onClose?: () => void
 }
 
 const STORAGE_KEY = 'sidebar:collapsed'
 
-export default function Sidebar({ role, open = false, onClose }: SidebarProps) {
+export default function Sidebar({ role, open = false, hidden = false, onClose }: SidebarProps) {
   const pathname = usePathname()
   // Filter each section's items by role; drop any section that has no items left.
   const visibleSections = SECTIONS
@@ -153,8 +155,9 @@ export default function Sidebar({ role, open = false, onClose }: SidebarProps) {
 
       <aside
         className={`fixed lg:relative z-50 lg:z-auto top-0 right-0 h-full w-[260px] shrink-0 overflow-hidden
-          transition-transform duration-300 ease-out
-          ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}
+          transition-all duration-300 ease-out
+          ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+          ${hidden ? 'lg:w-0' : 'lg:w-[260px]'}`}
         style={{
           background: 'linear-gradient(180deg, #060e1a 0%, #0a2540 40%, #0d2f52 100%)',
         }}

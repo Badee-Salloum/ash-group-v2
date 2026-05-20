@@ -320,6 +320,7 @@ export default function CustomerDetailPage() {
         columns={columns}
         loading={loading}
         exportFilename={`customer-${name}`}
+        tableId="customer-transactions"
         emptyMessage="لا توجد عمليات لهذا العميل"
       />
     </div>

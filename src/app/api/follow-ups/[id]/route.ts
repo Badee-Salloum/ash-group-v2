@@ -15,6 +15,13 @@ const patchSchema = z.object({
   // empty string clears the assignee; otherwise expects a valid userId
   followUpAssignedTo: z.string().optional(),
   followUpResolution: z.string().max(2000).optional(),
+  // The underlying transaction's own status + review category — editable here
+  // so a follow-up can be resolved and reclassified in one place.
+  status: z.enum(['MATCHED', 'PENDING_SC', 'PENDING_P', 'DISCREPANCY', 'WASTE', 'RETURNS']).optional(),
+  reviewCategory: z.enum([
+    'THEFT', 'WASTE', 'EXTRA', 'EMPLOYEE_ERROR', 'CUSTOMER_ERROR',
+    'PLATFORM_ERROR', 'COMPLAINT', 'INTERNAL_TRANSFER', 'OTHER',
+  ]).nullable().optional(),
 })
 
 export async function PATCH(
@@ -33,6 +40,7 @@ export async function PATCH(
       select: {
         id: true,
         accountId: true,
+        status: true,
         followUpStatus: true,
         followUpAssignedTo: true,
         followUpResolution: true,
@@ -86,6 +94,19 @@ export async function PATCH(
       update.followUpAssignedTo = data.followUpAssignedTo === '' ? null : data.followUpAssignedTo
     }
     if (data.followUpResolution !== undefined) update.followUpResolution = data.followUpResolution
+    // Transaction's own status / review category.
+    if (data.status !== undefined) update.status = data.status
+    if (data.reviewCategory !== undefined) {
+      update.reviewCategory = data.reviewCategory
+      // Setting a category marks the row reviewed; clearing it un-marks.
+      if (data.reviewCategory) {
+        update.reviewedBy = session.userId
+        update.reviewedAt = new Date()
+      } else {
+        update.reviewedBy = null
+        update.reviewedAt = null
+      }
+    }
 
     // Resolve metadata: stamp on transition INTO RESOLVED/CLOSED, clear when leaving
     const newStatus = data.followUpStatus
@@ -118,6 +139,8 @@ export async function PATCH(
         followUpStatus: existing.followUpStatus,
         followUpAssignedTo: existing.followUpAssignedTo,
         followUpResolution: existing.followUpResolution,
+        status: existing.status,
+        reviewCategory: existing.reviewCategory,
       },
       after: update,
     })

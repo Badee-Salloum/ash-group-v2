@@ -129,13 +129,13 @@ export function EditModal({ tx, onClose, onSaved }: { tx: Transaction; onClose: 
             {/* SC TX ID */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">رقم شام كاش</label>
-              <input className="input font-mono text-sm" value={form.shamCashTxId}
+              <input className="input font-mono text-base font-bold" value={form.shamCashTxId}
                 onChange={e => setForm({ ...form, shamCashTxId: e.target.value })} />
             </div>
             {/* Platform TX ID */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">رقم المنصة</label>
-              <input className="input font-mono text-sm" value={form.platformTxId}
+              <input className="input font-mono text-base font-bold" value={form.platformTxId}
                 onChange={e => setForm({ ...form, platformTxId: e.target.value })} />
             </div>
           </div>
@@ -143,7 +143,7 @@ export function EditModal({ tx, onClose, onSaved }: { tx: Transaction; onClose: 
           {/* User ID */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">User ID</label>
-            <input className="input font-mono text-sm" value={form.platformUserId}
+            <input className="input font-mono text-base font-bold" value={form.platformUserId}
               onChange={e => setForm({ ...form, platformUserId: e.target.value })} />
           </div>
 

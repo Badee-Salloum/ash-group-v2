@@ -146,6 +146,7 @@ export default function ExpensesPage() {
         columns={columns}
         loading={loading}
         exportFilename="expenses"
+        tableId="expenses"
         emptyMessage="لا توجد صرفيات مسجلة"
       />
 

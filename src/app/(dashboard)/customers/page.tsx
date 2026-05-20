@@ -240,6 +240,7 @@ export default function CustomersPage() {
         columns={columns}
         loading={loading}
         exportFilename="customers"
+        tableId="customers"
         emptyMessage="لا يوجد عملاء في النطاق المحدد"
       />
     </div>

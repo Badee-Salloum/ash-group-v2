@@ -48,6 +48,10 @@ model User {
   // different team members rotate through the same off-days.
   weeklyOffDays   Int       @default(1)
 
+  // Per-user UI preferences (e.g. table column order). Free-form JSON:
+  // { tableColumns: { [tableId]: string[] } }
+  uiPreferences   Json?
+
   accountAccess AccountAccess[]
   auditLogs     AuditLog[]
   expenses      Expense[]
@@ -161,6 +165,7 @@ enum TransactionStatus {
   PENDING_P
   DISCREPANCY
   WASTE
+  RETURNS    // مرتجعات — لا تدخل في حساب الأرباح ولا الهدر
 }
 
 enum ReviewCategory {

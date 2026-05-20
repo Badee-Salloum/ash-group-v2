@@ -2,6 +2,10 @@ export type FollowUpStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
 export type FollowUpCategory = 'COMPLAINT' | 'CUSTOMER_ERROR' | 'PLATFORM_ERROR'
 export type TxType = 'DEPOSIT' | 'WITHDRAWAL'
 export type TxSource = 'SHAM_CASH' | 'PLATFORM'
+export type TxStatus = 'MATCHED' | 'PENDING_SC' | 'PENDING_P' | 'DISCREPANCY' | 'WASTE' | 'RETURNS'
+export type ReviewCategory =
+  | 'THEFT' | 'WASTE' | 'EXTRA' | 'EMPLOYEE_ERROR' | 'CUSTOMER_ERROR'
+  | 'PLATFORM_ERROR' | 'COMPLAINT' | 'INTERNAL_TRANSFER' | 'OTHER'
 
 export interface FollowUpRow {
   id: string
@@ -15,6 +19,7 @@ export interface FollowUpRow {
   shamCashTxId: string | null
   platformTxId: string | null
   platformUserId: string | null
+  status: TxStatus
   reviewCategory: FollowUpCategory | null
   reviewNotes: string | null
   reviewedAt: string | null
@@ -64,4 +69,27 @@ export const TYPE_LABELS: Record<TxType, string> = {
 export const SOURCE_LABELS: Record<TxSource, string> = {
   SHAM_CASH: 'شام كاش',
   PLATFORM:  'المنصة',
+}
+
+// The underlying transaction's own status — editable from the follow-up modal.
+export const TX_STATUS_LABELS: Record<TxStatus, { label: string; cls: string }> = {
+  MATCHED:     { label: 'مطابقة',          cls: 'bg-emerald-100 text-emerald-800 ring-emerald-200' },
+  PENDING_SC:  { label: 'شام كاش فقط',     cls: 'bg-amber-100 text-amber-800 ring-amber-200' },
+  PENDING_P:   { label: 'المنصة فقط',      cls: 'bg-sky-100 text-sky-800 ring-sky-200' },
+  DISCREPANCY: { label: 'فارق في المبلغ',  cls: 'bg-rose-100 text-rose-800 ring-rose-200' },
+  WASTE:       { label: 'هدر',             cls: 'bg-gray-200 text-gray-800 ring-gray-300' },
+  RETURNS:     { label: 'مرتجعات',         cls: 'bg-indigo-100 text-indigo-800 ring-indigo-200' },
+}
+
+// Full review-category set (manual classification).
+export const REVIEW_CATEGORY_LABELS: Record<ReviewCategory, string> = {
+  THEFT:             'سرقة',
+  WASTE:             'هدر',
+  EXTRA:             'زيادة',
+  EMPLOYEE_ERROR:    'خطأ موظف',
+  CUSTOMER_ERROR:    'خطأ زبون',
+  PLATFORM_ERROR:    'خطأ منصة',
+  COMPLAINT:         'شكوى',
+  INTERNAL_TRANSFER: 'تحويل داخلي',
+  OTHER:             'غير ذلك',
 }

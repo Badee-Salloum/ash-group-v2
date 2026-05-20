@@ -3,9 +3,20 @@ import { useState } from 'react'
 import { X, Loader2, Save, ExternalLink } from 'lucide-react'
 import { fmtSyria } from '@/lib/datetime'
 import {
-  FollowUpRow, AssigneeUser, FollowUpStatus,
+  FollowUpRow, AssigneeUser, FollowUpStatus, TxStatus, ReviewCategory,
   STATUS_LABELS, CATEGORY_LABELS, TYPE_LABELS, SOURCE_LABELS,
+  TX_STATUS_LABELS, REVIEW_CATEGORY_LABELS,
 } from './types'
+
+// One transaction ID — label above, large mono value. Always LTR.
+function IdField({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="min-w-[88px]">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="font-mono text-sm font-bold text-slate-800">{value || '—'}</p>
+    </div>
+  )
+}
 
 interface Props {
   row: FollowUpRow
@@ -21,6 +32,9 @@ export function FollowUpModal({ row, assignees, currentUserId, onClose, onSaved 
   const [status, setStatus] = useState<FollowUpStatus>(row.followUpStatus ?? 'OPEN')
   const [assignedTo, setAssignedTo] = useState<string>(row.followUpAssignedTo ?? '')
   const [resolution, setResolution] = useState<string>(row.followUpResolution ?? '')
+  // The underlying transaction's own status + review category.
+  const [txStatus, setTxStatus] = useState<TxStatus>(row.status)
+  const [reviewCategory, setReviewCategory] = useState<ReviewCategory | ''>(row.reviewCategory ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,13 +48,17 @@ export function FollowUpModal({ row, assignees, currentUserId, onClose, onSaved 
     }
     setSaving(true)
     try {
-      const payload: Record<string, string> = {}
+      const payload: Record<string, string | null> = {}
       if (status !== row.followUpStatus) payload.followUpStatus = status
       if ((assignedTo || '') !== (row.followUpAssignedTo || '')) {
         payload.followUpAssignedTo = assignedTo
       }
       if ((resolution || '') !== (row.followUpResolution || '')) {
         payload.followUpResolution = resolution
+      }
+      if (txStatus !== row.status) payload.status = txStatus
+      if ((reviewCategory || '') !== (row.reviewCategory || '')) {
+        payload.reviewCategory = reviewCategory || null
       }
       if (Object.keys(payload).length === 0) {
         onClose()
@@ -91,48 +109,80 @@ export function FollowUpModal({ row, assignees, currentUserId, onClose, onSaved 
           </button>
         </div>
 
-        <div className="p-6 space-y-5 overflow-y-auto">
+        <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
           {/* Operation summary */}
-          <div className="bg-slate-50 rounded-xl p-4 text-sm space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-500">المبلغ:</span>
-              <span className="font-mono font-semibold text-slate-800">
-                {Number(row.amount).toLocaleString()} {row.currency}
-              </span>
+          <div className="bg-slate-50 rounded-xl p-4 text-sm">
+            {/* Transaction IDs — prominent, top-left */}
+            <div dir="ltr" className="flex flex-wrap gap-x-6 gap-y-2 pb-3 mb-3 border-b border-slate-200">
+              <IdField label="شام كاش" value={row.shamCashTxId} />
+              <IdField label="المنصة" value={row.platformTxId} />
+              <IdField label="User ID" value={row.platformUserId} />
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">المصدر:</span>
-              <span className="text-slate-700">{SOURCE_LABELS[row.source]}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">تاريخ العملية:</span>
-              <span className="font-mono text-slate-700">{fmtSyria(row.txDateTime)}</span>
-            </div>
-            {row.platformUserId && (
+            <div className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-slate-500">User ID:</span>
-                <span className="font-mono text-slate-700" dir="ltr">{row.platformUserId}</span>
-              </div>
-            )}
-            {(row.shamCashTxId || row.platformTxId) && (
-              <div className="flex justify-between">
-                <span className="text-slate-500">رقم العملية:</span>
-                <span className="font-mono text-xs text-slate-700" dir="ltr">
-                  {row.shamCashTxId || row.platformTxId}
+                <span className="text-slate-500">المبلغ:</span>
+                <span className="font-mono font-semibold text-slate-800">
+                  {Number(row.amount).toLocaleString()} {row.currency}
                 </span>
               </div>
-            )}
-            {row.reviewNotes && (
-              <div className="pt-2 border-t border-slate-200">
-                <p className="text-slate-500 text-xs mb-1">ملاحظة المراجع:</p>
-                <p className="text-slate-700 whitespace-pre-wrap">{row.reviewNotes}</p>
+              <div className="flex justify-between">
+                <span className="text-slate-500">المصدر:</span>
+                <span className="text-slate-700">{SOURCE_LABELS[row.source]}</span>
               </div>
-            )}
+              <div className="flex justify-between">
+                <span className="text-slate-500">تاريخ العملية:</span>
+                <span className="font-mono text-slate-700">{fmtSyria(row.txDateTime)}</span>
+              </div>
+              {row.reviewNotes && (
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-slate-500 text-xs mb-1">ملاحظة المراجع:</p>
+                  <p className="text-slate-700 whitespace-pre-wrap">{row.reviewNotes}</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Status */}
+          {/* Transaction status */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">الحالة</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">حالة العملية</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {(Object.keys(TX_STATUS_LABELS) as TxStatus[]).map(s => {
+                const meta = TX_STATUS_LABELS[s]
+                const active = txStatus === s
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setTxStatus(s)}
+                    className={`px-3 py-2 rounded-lg text-sm font-semibold ring-1 transition-colors ${
+                      active ? meta.cls : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {meta.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Review category */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">فئة المراجعة</label>
+            <select
+              value={reviewCategory}
+              onChange={e => setReviewCategory(e.target.value as ReviewCategory | '')}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
+            >
+              <option value="">— بدون فئة —</option>
+              {(Object.keys(REVIEW_CATEGORY_LABELS) as ReviewCategory[]).map(c => (
+                <option key={c} value={c}>{REVIEW_CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Follow-up status */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">حالة المتابعة</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {STATUS_OPTIONS.map(s => {
                 const meta = STATUS_LABELS[s]

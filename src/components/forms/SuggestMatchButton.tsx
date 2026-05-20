@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Link2, CheckCircle, Loader2, X, Zap, ArrowLeftRight, Clock, User, Hash } from 'lucide-react'
+import { Link2, CheckCircle, Loader2, X, Zap, ArrowLeftRight, Clock, User } from 'lucide-react'
 import { fmtSyria } from '@/lib/datetime'
 
 interface Suggestion {
@@ -224,6 +224,29 @@ export default function SuggestMatchButton({ transactionId, onResolved, bestMatc
 
                           {/* Main info */}
                           <div className="flex-1 min-w-0 space-y-1.5">
+                            {/* IDs — prominent, top-left of the card */}
+                            {(s.shamCashTxId || s.platformTxId || s.platformUserId) && (
+                              <div dir="ltr" className="flex items-center gap-x-4 gap-y-1 flex-wrap">
+                                {s.shamCashTxId && (
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-gray-400">SC</span>
+                                    <span className="font-mono text-sm font-bold text-gray-800">{s.shamCashTxId}</span>
+                                  </span>
+                                )}
+                                {s.platformTxId && (
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-gray-400">P</span>
+                                    <span className="font-mono text-sm font-bold text-gray-800">{s.platformTxId}</span>
+                                  </span>
+                                )}
+                                {s.platformUserId && (
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-gray-400">UID</span>
+                                    <span className="font-mono text-sm font-bold text-gray-800">{s.platformUserId}</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {/* Row 1: amount + status badges */}
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono font-bold text-gray-900 text-base">
@@ -260,20 +283,6 @@ export default function SuggestMatchButton({ transactionId, onResolved, bestMatc
                               )}
                             </div>
 
-                            {/* Row 3: IDs (compact) */}
-                            {(s.shamCashTxId || s.platformTxId || s.platformUserId) && (
-                              <div className="flex items-center gap-3 flex-wrap text-[10px] text-gray-400">
-                                {s.shamCashTxId && (
-                                  <span className="flex items-center gap-1"><Hash size={9} /> SC <span className="font-mono text-gray-600">{s.shamCashTxId}</span></span>
-                                )}
-                                {s.platformTxId && (
-                                  <span className="flex items-center gap-1"><Hash size={9} /> P <span className="font-mono text-gray-600">{s.platformTxId}</span></span>
-                                )}
-                                {s.platformUserId && (
-                                  <span className="flex items-center gap-1"><User size={9} /> UID <span className="font-mono text-gray-600">{s.platformUserId}</span></span>
-                                )}
-                              </div>
-                            )}
                           </div>
 
                           {/* Confirm button */}

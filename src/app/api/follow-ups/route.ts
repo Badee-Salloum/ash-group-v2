@@ -140,6 +140,7 @@ export async function GET(req: NextRequest) {
       shamCashTxId: r.shamCashTxId,
       platformTxId: r.platformTxId,
       platformUserId: r.platformUserId,
+      status: r.status,
       reviewCategory: r.reviewCategory,
       reviewNotes: r.reviewNotes,
       reviewedAt: r.reviewedAt?.toISOString() ?? null,

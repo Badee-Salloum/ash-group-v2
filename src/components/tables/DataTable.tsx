@@ -26,6 +26,9 @@ interface DataTableProps<T> {
   emptyMessage?: string
   emptyHint?: string
   emptyAction?: { label: string; onClick: () => void }
+  /** Stable id for this table. When set, the user's column order is loaded
+   *  from and saved to their server-side preferences. */
+  tableId?: string
 }
 
 export default function DataTable<T extends Record<string, unknown>>({
@@ -40,6 +43,7 @@ export default function DataTable<T extends Record<string, unknown>>({
   emptyMessage = 'لا توجد بيانات',
   emptyHint,
   emptyAction,
+  tableId,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
@@ -49,10 +53,60 @@ export default function DataTable<T extends Record<string, unknown>>({
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set())
   const [showColMenu, setShowColMenu] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  // User-defined column order (keys). null = use the columns prop order as-is.
+  const [columnOrder, setColumnOrder] = useState<string[] | null>(null)
+  const dragKey = useRef<string | null>(null)
   const colMenuRef = useRef<HTMLDivElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
 
-  const visibleCols = columns.filter(c => !hiddenCols.has(c.key))
+  // Load this user's saved column order for this table.
+  useEffect(() => {
+    if (!tableId) return
+    let cancelled = false
+    fetch('/api/me/preferences')
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return
+        const saved = d?.data?.tableColumns?.[tableId]
+        if (Array.isArray(saved)) setColumnOrder(saved as string[])
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [tableId])
+
+  // Columns reordered by the saved order; unknown/new columns keep their
+  // original relative position at the end (stable sort).
+  const orderedColumns = useMemo(() => {
+    if (!columnOrder) return columns
+    const rank = (k: string) => {
+      const i = columnOrder.indexOf(k)
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i
+    }
+    return [...columns].sort((a, b) => rank(a.key) - rank(b.key))
+  }, [columns, columnOrder])
+
+  function handleColumnDrop(targetKey: string) {
+    const from = dragKey.current
+    dragKey.current = null
+    if (!from || from === targetKey) return
+    const order = orderedColumns.map(c => c.key)
+    const fromIdx = order.indexOf(from)
+    if (fromIdx === -1) return
+    order.splice(fromIdx, 1)
+    const toIdx = order.indexOf(targetKey)
+    if (toIdx === -1) return
+    order.splice(toIdx, 0, from)
+    setColumnOrder(order)
+    if (tableId) {
+      fetch('/api/me/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableColumns: { [tableId]: order } }),
+      }).catch(() => {})
+    }
+  }
+
+  const visibleCols = orderedColumns.filter(c => !hiddenCols.has(c.key))
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -246,7 +300,7 @@ export default function DataTable<T extends Record<string, unknown>>({
             {showColMenu && (
               <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-900 shadow-xl rounded-xl border border-gray-100 dark:border-gray-800 p-2 z-50 min-w-52 animate-fade-in">
                 <p className="text-xs font-semibold text-gray-400 px-2 py-1 mb-1">الأعمدة المعروضة</p>
-                {columns.map(col => (
+                {orderedColumns.map(col => (
                   <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
                     <input type="checkbox" checked={!hiddenCols.has(col.key)} onChange={() => toggleColumn(col.key)}
                       className="rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
@@ -296,8 +350,13 @@ export default function DataTable<T extends Record<string, unknown>>({
                 <th
                   key={col.key}
                   style={col.width ? { width: col.width } : {}}
+                  draggable
+                  onDragStart={() => { dragKey.current = col.key }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={() => handleColumnDrop(col.key)}
                   onClick={() => col.sortable !== false && handleSort(col.key)}
-                  className={col.sortable !== false ? 'cursor-pointer select-none hover:bg-gray-100/50 transition-colors' : ''}
+                  title="اسحب لإعادة ترتيب الأعمدة"
+                  className={`select-none transition-colors ${col.sortable !== false ? 'cursor-pointer hover:bg-gray-100/50' : 'cursor-grab'}`}
                 >
                   <span className="inline-flex items-center gap-1">
                     {col.header}

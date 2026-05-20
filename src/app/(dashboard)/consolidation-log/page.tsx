@@ -255,6 +255,7 @@ export default function ConsolidationLogPage() {
         columns={columns}
         loading={loading}
         exportFilename="consolidation-log"
+        tableId="consolidation-log"
         emptyMessage="لا توجد عمليات دمج تلقائي في الفترة المحددة"
       />
     </div>

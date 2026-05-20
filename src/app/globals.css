@@ -122,6 +122,10 @@
     background: linear-gradient(135deg, rgba(107, 114, 128, 0.1) 0%, rgba(107, 114, 128, 0.05) 100%);
     @apply text-gray-600 ring-1 ring-gray-200/50 hover:ring-gray-300;
   }
+  .badge-returns {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+    @apply text-indigo-700 ring-1 ring-indigo-200/50 hover:ring-indigo-300;
+  }
 
   /* ── Table ── */
   .data-table { @apply w-full text-sm; }

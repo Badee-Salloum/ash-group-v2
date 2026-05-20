@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
 
 const updateSchema = z.object({
   id: z.string(),
-  status: z.enum(['MATCHED', 'PENDING_SC', 'PENDING_P', 'DISCREPANCY', 'WASTE']).optional(),
+  status: z.enum(['MATCHED', 'PENDING_SC', 'PENDING_P', 'DISCREPANCY', 'WASTE', 'RETURNS']).optional(),
   amount: z.number().positive().optional(),
   shamCashTxId: z.string().optional(),
   platformTxId: z.string().optional(),

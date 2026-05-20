@@ -139,6 +139,7 @@ export default function ReconciliationPage() {
         columns={columns}
         loading={loading}
         exportFilename="reconciliation"
+        tableId="reconciliation"
         excelExportUrl={`/api/transactions/export?${new URLSearchParams(Object.entries(filters).filter(([,v]) => v)).toString()}`}
         emptyMessage="لا توجد عمليات تطابق الفلاتر المحددة"
         emptyHint="جرّب توسيع نطاق البحث أو إزالة بعض الفلاتر."

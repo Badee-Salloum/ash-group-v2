@@ -1,7 +1,7 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { UserRole } from '@/lib/db/prisma-types'
-import { LogOut, Bell, Moon, Sun, Menu } from 'lucide-react'
+import { LogOut, Bell, Moon, Sun, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useLanguage } from '@/lib/i18n/context'
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -13,9 +13,12 @@ interface TopbarProps {
   name: string
   role: UserRole
   onMenuClick?: () => void
+  /** Desktop sidebar hidden state + toggle. */
+  sidebarHidden?: boolean
+  onToggleSidebar?: () => void
 }
 
-export default function Topbar({ name, role, onMenuClick }: TopbarProps) {
+export default function Topbar({ name, role, onMenuClick, sidebarHidden, onToggleSidebar }: TopbarProps) {
   const router = useRouter()
   const { theme, toggleTheme } = useLanguage()
 
@@ -28,7 +31,7 @@ export default function Topbar({ name, role, onMenuClick }: TopbarProps) {
 
   return (
     <header className="h-[60px] bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-200/30 dark:border-gray-700/30 flex items-center justify-between px-3 sm:px-4 md:px-6 shrink-0 relative z-10">
-      {/* Left: hamburger on mobile */}
+      {/* Left: hamburger on mobile, sidebar hide/show on desktop */}
       <div className="flex items-center gap-2">
         <button
           onClick={onMenuClick}
@@ -36,6 +39,14 @@ export default function Topbar({ name, role, onMenuClick }: TopbarProps) {
           aria-label="فتح القائمة"
         >
           <Menu size={20} />
+        </button>
+        <button
+          onClick={onToggleSidebar}
+          className="hidden lg:flex w-9 h-9 rounded-xl items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 hover:bg-gray-100/80 dark:hover:bg-gray-800 transition-all duration-300"
+          title={sidebarHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+          aria-label={sidebarHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+        >
+          {sidebarHidden ? <PanelRightOpen size={19} /> : <PanelRightClose size={19} />}
         </button>
       </div>
 
