@@ -1,25 +1,27 @@
 // Auto-approval for shift handovers.
 //
-// A handover involves two sessions:
-//   - INCOMING: a new ShiftSession in PENDING_START (handoverFromUserId set)
-//   - OUTGOING: the prior ShiftSession in PENDING_END (the user requested end)
+// A handover involves:
+//   - INCOMING: a new ShiftSession in PENDING_START. It carries
+//     `handoverFromUserIds` — the set of previous-shift employees it takes
+//     over from (copied from the scheduled Shift at check-in).
+//   - OUTGOING(s): one ShiftSession per source user in PENDING_END (each
+//     requested check-out).
 //
-// When BOTH sides have done their part, this function flips both atomically:
+// When the incoming employee has checked in AND every source has requested
+// check-out, this flips them all atomically:
 //   incoming PENDING_START → ACTIVE
-//   outgoing PENDING_END   → COMPLETED
+//   each outgoing PENDING_END → COMPLETED
 //
-// Either side can be the *trigger*:
-//   - check-in fires it with { incomingSessionId } after creating the incoming
-//   - request-end fires it with { outgoingSessionId } after flipping outgoing
-// Whichever request happens last completes the handover. If only one side has
-// done their part, this function returns { approved: false, reason } so the
-// UI can render meaningful "waiting for X" feedback.
+// Either side can trigger it:
+//   - check-in fires { incomingSessionId } after creating the incoming
+//   - request-end fires { outgoingSessionId } after a source flips to PENDING_END
+// Whichever request is last completes the handover. If a side is still
+// missing, returns { approved: false, reason } for "waiting for X" feedback.
 //
 // Guards:
-//   - Wallet sets must match (exact equality, both directions)
-//   - Incoming employee must be scheduled for this shift+date+isDayOff:false
-//   - Atomic via updateMany() with status guards — concurrent triggers cannot
-//     both succeed (the second sees count:0 from the status guard)
+//   - Incoming wallets ⊆ union of all sources' wallets
+//   - Incoming employee must be scheduled today (not isDayOff)
+//   - Atomic via updateMany() status guards — concurrent triggers can't both win
 
 import { db } from '@/lib/db/client'
 import { audit } from '@/lib/auth'
@@ -40,6 +42,7 @@ interface SessionWithWallets {
   status: string
   shiftNumber: string | null
   handoverFromUserId: string | null
+  handoverFromUserIds: string[]
   notes: string | null
   startAt: Date
   wallets: { accountId: string }[]
@@ -49,18 +52,22 @@ function isIncomingTrigger(t: AutoApproveTrigger): t is { incomingSessionId: str
   return 'incomingSessionId' in t
 }
 
-async function loadIncomingByOutgoing(outgoingUserId: string): Promise<SessionWithWallets | null> {
-  // Most-recent PENDING_START whose handoverFromUserId == outgoing's user.
+async function loadIncoming(id: string): Promise<SessionWithWallets | null> {
+  return db.shiftSession.findUnique({ where: { id }, include: { wallets: true } })
+}
+
+// Most-recent PENDING_START whose handover source set includes `outgoingUserId`.
+async function loadIncomingByOutgoingUser(outgoingUserId: string): Promise<SessionWithWallets | null> {
   return db.shiftSession.findFirst({
-    where: { status: 'PENDING_START', handoverFromUserId: outgoingUserId },
+    where: { status: 'PENDING_START', handoverFromUserIds: { has: outgoingUserId } },
     include: { wallets: true },
     orderBy: { startAt: 'desc' },
   })
 }
 
-async function loadOutgoingByIncoming(incomingFromUserId: string): Promise<SessionWithWallets | null> {
+async function loadPendingEndFor(userId: string): Promise<SessionWithWallets | null> {
   return db.shiftSession.findFirst({
-    where: { status: 'PENDING_END', userId: incomingFromUserId },
+    where: { status: 'PENDING_END', userId },
     include: { wallets: true },
     orderBy: { startAt: 'desc' },
   })
@@ -69,81 +76,82 @@ async function loadOutgoingByIncoming(incomingFromUserId: string): Promise<Sessi
 export async function tryAutoApproveHandover(
   trigger: AutoApproveTrigger,
 ): Promise<AutoApproveResult> {
-  // ── Resolve both sides regardless of which one triggered. ──
+  // ── Resolve the incoming session. ──
   let incoming: SessionWithWallets | null
-  let outgoing: SessionWithWallets | null
-
   if (isIncomingTrigger(trigger)) {
-    incoming = await db.shiftSession.findUnique({
-      where: { id: trigger.incomingSessionId },
-      include: { wallets: true },
-    })
+    incoming = await loadIncoming(trigger.incomingSessionId)
     if (!incoming || incoming.status !== 'PENDING_START') {
       return { approved: false, reason: 'الجلسة ليست بانتظار الموافقة' }
     }
-    if (!incoming.handoverFromUserId) {
-      return { approved: false, reason: 'لا يوجد تسليم لمطابقته' }
-    }
-    outgoing = await loadOutgoingByIncoming(incoming.handoverFromUserId)
-    if (!outgoing) {
-      return { approved: false, reason: 'في انتظار تسجيل خروج الموظف السابق' }
-    }
   } else {
-    outgoing = await db.shiftSession.findUnique({
+    const outg = await db.shiftSession.findUnique({
       where: { id: trigger.outgoingSessionId },
-      include: { wallets: true },
+      select: { status: true, userId: true },
     })
-    if (!outgoing || outgoing.status !== 'PENDING_END') {
+    if (!outg || outg.status !== 'PENDING_END') {
       return { approved: false, reason: 'الجلسة ليست بانتظار الإغلاق' }
     }
-    incoming = await loadIncomingByOutgoing(outgoing.userId)
+    incoming = await loadIncomingByOutgoingUser(outg.userId)
     if (!incoming) {
       return { approved: false, reason: 'في انتظار تسجيل دخول الموظف التالي' }
     }
   }
 
+  // Source set — prefer the multi-value field, fall back to the legacy single.
+  const sources = incoming.handoverFromUserIds?.length
+    ? incoming.handoverFromUserIds
+    : (incoming.handoverFromUserId ? [incoming.handoverFromUserId] : [])
+  if (sources.length === 0) {
+    return { approved: false, reason: 'لا يوجد تسليم لمطابقته' }
+  }
   if (!incoming.shiftNumber) {
     return { approved: false, reason: 'رقم المناوبة غير محدد — يلزم موافقة يدوية' }
   }
 
-  // ── Wallet-set equality (both directions, exact). ──
-  const inSet = new Set(incoming.wallets.map(w => w.accountId))
-  const outSet = new Set(outgoing.wallets.map(w => w.accountId))
-  if (inSet.size !== outSet.size) {
-    return { approved: false, reason: 'عدد المحافظ المسلَّمة لا يطابق المستلَمة' }
+  // ── Every source must have a PENDING_END session waiting. ──
+  const outgoings: SessionWithWallets[] = []
+  for (const srcId of sources) {
+    const o = await loadPendingEndFor(srcId)
+    if (!o) {
+      return { approved: false, reason: 'في انتظار تسجيل خروج جميع موظفي الشيفت السابق' }
+    }
+    outgoings.push(o)
   }
-  for (const id of inSet) {
-    if (!outSet.has(id)) {
-      return { approved: false, reason: 'المحافظ المختارة لا تطابق المحافظ المسلَّمة' }
+
+  // ── Wallet coverage: incoming wallets ⊆ union of all sources' wallets. ──
+  const union = new Set<string>()
+  for (const o of outgoings) {
+    for (const w of o.wallets) union.add(w.accountId)
+  }
+  for (const w of incoming.wallets) {
+    if (!union.has(w.accountId)) {
+      return { approved: false, reason: 'المحافظ المستلَمة لا تغطّيها المحافظ المسلَّمة' }
     }
   }
 
-  // ── Schedule check: incoming must be on the roster today, not isDayOff. ──
-  // "Today" is the Damascus calendar day, not the server's local day. A
-  // check-in at 00:47 Damascus is 21:47 UTC the previous day — using the
-  // server's midnight would look up the wrong day's roster and wrongly
-  // reject the handover.
+  // ── Schedule check: incoming employee must be rostered today (Damascus). ──
   const todayKey = damascusDateStr(new Date())
-  const todayStart = damascusDayStartUtc(todayKey)
-  const todayEnd = damascusDayStartUtc(addDays(todayKey, 1))
   const scheduled = await db.shift.findFirst({
     where: {
       userId: incoming.userId,
       shiftNumber: incoming.shiftNumber as 'ONE' | 'TWO' | 'THREE',
-      date: { gte: todayStart, lt: todayEnd },
+      date: {
+        gte: damascusDayStartUtc(todayKey),
+        lt: damascusDayStartUtc(addDays(todayKey, 1)),
+      },
       isDayOff: false,
     },
+    select: { id: true },
   })
   if (!scheduled) {
     return { approved: false, reason: 'الموظف غير مجدول لهذه المناوبة اليوم' }
   }
 
-  // ── Atomic flip. updateMany() with a status guard means concurrent triggers
-  //    cannot both succeed (the second sees count:0 because status moved). ──
+  // ── Atomic flip: incoming → ACTIVE, every outgoing → COMPLETED. ──
   const now = new Date()
   try {
     await db.$transaction(async (tx: typeof db) => {
-      const flipIncoming = await tx.shiftSession.updateMany({
+      const flipIn = await tx.shiftSession.updateMany({
         where: { id: incoming!.id, status: 'PENDING_START' },
         data: {
           status: 'ACTIVE',
@@ -155,28 +163,28 @@ export async function tryAutoApproveHandover(
             : 'موافقة تلقائية (مطابقة محافظ + جدول)',
         },
       })
-      if (flipIncoming.count === 0) {
-        throw new Error('race')
+      if (flipIn.count === 0) throw new Error('race')
+      for (const o of outgoings) {
+        const duration = Math.round((now.getTime() - o.startAt.getTime()) / 60000)
+        await tx.shiftSession.updateMany({
+          where: { id: o.id, status: 'PENDING_END' },
+          data: {
+            status: 'COMPLETED',
+            endAt: now,
+            durationMinutes: duration,
+            approvedById: null,
+            approvedAt: now,
+          },
+        })
       }
-      const duration = Math.round((now.getTime() - outgoing!.startAt.getTime()) / 60000)
-      await tx.shiftSession.updateMany({
-        where: { id: outgoing!.id, status: 'PENDING_END' },
-        data: {
-          status: 'COMPLETED',
-          endAt: now,
-          durationMinutes: duration,
-          approvedById: null,
-          approvedAt: now,
-        },
-      })
     })
   } catch {
     return { approved: false, reason: 'لم يتم التحديث (تعارض متزامن)' }
   }
 
   await audit(incoming.userId, 'AUTO_APPROVE_HANDOVER', 'ShiftSession', incoming.id, {
-    outgoingSessionId: outgoing.id,
-    walletCount: inSet.size,
+    outgoingSessionIds: outgoings.map(o => o.id),
+    walletCount: incoming.wallets.length,
     triggeredBy: isIncomingTrigger(trigger) ? 'incoming' : 'outgoing',
   })
   return { approved: true }

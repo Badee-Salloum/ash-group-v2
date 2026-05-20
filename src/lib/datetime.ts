@@ -99,3 +99,19 @@ export function weekDays(weekStart: string): string[] {
 export function damascusDayStartUtc(dateStr: string): Date {
   return new Date(`${dateStr}T00:00:00+03:00`)
 }
+
+// Minutes since midnight (0..1439) for a timestamp, in Damascus time. Used to
+// test whether "now" falls inside a shift's clock window.
+export function damascusMinutesOfDay(d: Date | string | number = new Date()): number {
+  const date = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Damascus',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+  const get = (type: string) => parts.find(p => p.type === type)?.value || '0'
+  // Intl renders midnight as '24' in en-GB hourCycle — normalize to 0.
+  const hour = Number(get('hour')) % 24
+  return hour * 60 + Number(get('minute'))
+}

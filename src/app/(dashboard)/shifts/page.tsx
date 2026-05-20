@@ -1,11 +1,10 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { fmtSyria, damascusDateStr } from '@/lib/datetime'
-import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil, StopCircle } from 'lucide-react'
+import { fmtSyria } from '@/lib/datetime'
+import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil, StopCircle, CalendarClock } from 'lucide-react'
 import SessionEditModal, { type SessionLite } from '@/components/forms/SessionEditModal'
 
 interface Account { id: string; name: string; currency: string }
-interface Employee { id: string; name: string; jobTitle: string | null }
 interface Sess {
   id: string
   userId: string
@@ -19,6 +18,11 @@ interface Sess {
   approvedBy: { id: string; name: string } | null
   wallets: Array<{ accountId: string }>
 }
+interface MyShift {
+  shiftNumber: 'ONE' | 'TWO' | 'THREE'
+  windowLabel: string
+  handoverNames: string[]
+}
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   ACTIVE: { label: 'نشطة', cls: 'bg-emerald-100 text-emerald-800' },
@@ -27,7 +31,6 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   COMPLETED: { label: 'مكتملة', cls: 'bg-gray-100 text-gray-700' },
   CANCELLED: { label: 'ملغاة', cls: 'bg-rose-100 text-rose-700' },
 }
-
 const SHIFT_LABEL: Record<string, string> = {
   ONE: 'الأولى (06:00–14:00)',
   TWO: 'الثانية (14:00–22:00)',
@@ -35,148 +38,74 @@ const SHIFT_LABEL: Record<string, string> = {
 }
 
 export default function ShiftsPage() {
+  const [myRole, setMyRole] = useState<string>('')
   const [mySessions, setMySessions] = useState<Sess[]>([])
+  const [myShift, setMyShift] = useState<MyShift | null>(null)
+  // Admin-tier only:
   const [allActive, setAllActive] = useState<Sess[]>([])
   const [pendingApprovals, setPendingApprovals] = useState<Sess[]>([])
   const [recent, setRecent] = useState<Sess[]>([])
   const [allowedWallets, setAllowedWallets] = useState<Account[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [myRole, setMyRole] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  // Session being edited (null = modal closed).
   const [editingSession, setEditingSession] = useState<Sess | null>(null)
-
-  // Form state
-  const [showCheckIn, setShowCheckIn] = useState(false)
-  const [shiftNumber, setShiftNumber] = useState<'ONE' | 'TWO' | 'THREE' | ''>('')
-  const [walletIds, setWalletIds] = useState<Set<string>>(new Set())
-  const [handoverFrom, setHandoverFrom] = useState('')
-  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [msg, setMsg] = useState('')
-
-  // Counterpart suggestion: as the user picks wallets, ask the server who
-  // currently holds those wallets in an open session. This is the previous-
-  // shift employee they're taking over from — surface their name so the user
-  // doesn't have to know who to pick from a dropdown.
-  const [counterpart, setCounterpart] = useState<{
-    id: string; name: string; sessionStatus: string
-  } | null>(null)
-  const [counterpartCandidates, setCounterpartCandidates] = useState<Array<{ id: string; name: string }>>([])
-  const [counterpartLoading, setCounterpartLoading] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'reject' | 'forceComplete' | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [me, all, emps] = await Promise.all([
-      fetch('/api/shifts/sessions?userId=me').then(r => r.json()),
-      fetch('/api/shifts/sessions').then(r => r.json()),
-      fetch('/api/employees').then(r => r.json()),
-    ])
-    if (me.success) setMySessions(me.data)
-    if (all.success) {
-      const data: Sess[] = all.data
-      setAllActive(data.filter(s => s.status === 'ACTIVE' || s.status === 'PENDING_END'))
-      setPendingApprovals(data.filter(s => s.status === 'PENDING_START'))
-      // Most recent 10 closed sessions — surfaced so supervisors can
-      // correct mistakes (timing / shift number) after the fact.
-      setRecent(
-        data
-          .filter(s => s.status === 'COMPLETED' || s.status === 'CANCELLED')
-          .slice(0, 10),
-      )
-    }
-    if (emps.success) setEmployees(emps.data || [])
-    // Resolve the current user + derive today's allowed wallets from the
-    // schedule (per-shift plan, not a permanent employee-level list).
     const meRes = await fetch('/api/me').catch(() => null)
     const meData = meRes ? await meRes.json().catch(() => ({})) : {}
-    if (meData?.role) setMyRole(meData.role)
-    const myUserId = meData?.id
-    if (myUserId) {
-      const today = damascusDateStr(new Date())
-      const [schedRes, accRes] = await Promise.all([
-        fetch(`/api/schedule?from=${today}&to=${today}`).then(r => r.json()).catch(() => ({ data: [] })),
-        fetch('/api/accounts').then(r => r.json()).catch(() => ({ data: [] })),
+    const role: string = meData?.role || ''
+    setMyRole(role)
+    const isEmp = role === 'EMPLOYEE'
+
+    // Everyone gets their own sessions.
+    const meSess = await fetch('/api/shifts/sessions?userId=me').then(r => r.json()).catch(() => ({}))
+    if (meSess.success) setMySessions(meSess.data)
+
+    if (isEmp) {
+      const ms = await fetch('/api/shifts/my-shift').then(r => r.json()).catch(() => ({}))
+      setMyShift(ms.success ? ms.scheduled : null)
+    } else {
+      // Management view — all sessions + accounts (for the edit modal wallets).
+      const [all, accRes] = await Promise.all([
+        fetch('/api/shifts/sessions').then(r => r.json()).catch(() => ({})),
+        fetch('/api/accounts').then(r => r.json()).catch(() => ({})),
       ])
-      const allAccounts: Account[] = accRes.success ? (accRes.data || []) : []
-      const myShifts: Array<{ userId: string; isDayOff: boolean; walletIds: string[] }> =
-        schedRes.success ? (schedRes.data || []) : []
-      const walletIds = new Set<string>()
-      for (const s of myShifts) {
-        if (s.userId !== myUserId || s.isDayOff) continue
-        for (const id of s.walletIds || []) walletIds.add(id)
+      if (all.success) {
+        const data: Sess[] = all.data
+        setAllActive(data.filter(s => s.status === 'ACTIVE' || s.status === 'PENDING_END'))
+        setPendingApprovals(data.filter(s => s.status === 'PENDING_START'))
+        setRecent(data.filter(s => s.status === 'COMPLETED' || s.status === 'CANCELLED').slice(0, 10))
       }
-      setAllowedWallets(allAccounts.filter(a => walletIds.has(a.id)))
+      if (accRes.success) setAllowedWallets(accRes.data || [])
     }
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  // Counterpart lookup — debounced so we don't fire on every checkbox toggle.
-  useEffect(() => {
-    if (!showCheckIn) return
-    if (walletIds.size === 0) {
-      setCounterpart(null)
-      setCounterpartCandidates([])
-      return
-    }
-    setCounterpartLoading(true)
-    const ids = Array.from(walletIds).join(',')
-    const t = setTimeout(() => {
-      fetch(`/api/shifts/sessions/counterpart?walletIds=${encodeURIComponent(ids)}`)
-        .then(r => r.json())
-        .then(d => {
-          if (d.success) {
-            if (d.counterpart) {
-              setCounterpart({ ...d.counterpart, sessionStatus: d.sessionStatus })
-              setCounterpartCandidates([])
-              setHandoverFrom(d.counterpart.id)
-            } else if (d.ambiguous) {
-              setCounterpart(null)
-              setCounterpartCandidates(d.candidates || [])
-              setHandoverFrom('')
-            } else {
-              setCounterpart(null)
-              setCounterpartCandidates([])
-              setHandoverFrom('')
-            }
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => setCounterpartLoading(false))
-    }, 350)
-    return () => clearTimeout(t)
-  }, [walletIds, showCheckIn])
+  const isEmployee = myRole === 'EMPLOYEE'
+  const isAdminTier = myRole === 'ADMIN' || myRole === 'MANAGER'
+  const myOpen = mySessions.find(
+    s => s.status === 'ACTIVE' || s.status === 'PENDING_END' || s.status === 'PENDING_START',
+  )
+  const myRecent = mySessions
+    .filter(s => s.status === 'COMPLETED' || s.status === 'CANCELLED')
+    .slice(0, 8)
 
-  const myActive = mySessions.find(s => s.status === 'ACTIVE' || s.status === 'PENDING_END')
-
-  function toggleWallet(id: string) {
-    setWalletIds(s => {
-      const n = new Set(s)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
-  }
-
+  // One-click check-in — the server derives shift/wallets/handover from the
+  // schedule, so the request carries no body.
   async function handleCheckIn() {
     setSubmitting(true); setMsg('')
     try {
-      const res = await fetch('/api/shifts/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shiftNumber: shiftNumber || undefined,
-          walletIds: Array.from(walletIds),
-          handoverFromUserId: handoverFrom || undefined,
-          notes: notes || undefined,
-        }),
-      })
+      const res = await fetch('/api/shifts/sessions', { method: 'POST' })
       const d = await res.json()
       if (!d.success) throw new Error(d.error)
-      setShowCheckIn(false)
-      setShiftNumber(''); setWalletIds(new Set()); setHandoverFrom(''); setNotes('')
+      if (d.data?.autoApprovalReason && !d.data.autoApproved) {
+        setMsg(d.data.autoApprovalReason)
+      }
       load()
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e))
@@ -191,7 +120,7 @@ export default function ShiftsPage() {
   ) {
     if (action === 'cancel' && !confirm('إلغاء الجلسة؟ ستظهر كـ "ملغاة" في السجلات.')) return
     if (action === 'forceComplete' && !confirm(
-      'إنهاء الجلسة يدوياً وتعليمها كمكتملة؟\n\nيستخدم هذا الإجراء عند تجاوز انتظار التسليم — مثلاً عندما لا يصل الموظف التالي. سيتم تجاهل أي تعارض مع قواعد التسليم العادية.',
+      'إنهاء الجلسة يدوياً وتعليمها كمكتملة؟\n\nيُستخدم عند تجاوز انتظار التسليم — مثلاً عندما لا يصل الموظف التالي.',
     )) return
     try {
       const res = await fetch('/api/shifts/sessions', {
@@ -207,8 +136,6 @@ export default function ShiftsPage() {
     }
   }
 
-  const [bulkBusy, setBulkBusy] = useState<'approve' | 'reject' | 'forceComplete' | null>(null)
-
   async function handleBulk(
     action: 'approveHandover' | 'cancel' | 'forceComplete',
     targets: Sess[],
@@ -220,7 +147,6 @@ export default function ShiftsPage() {
     setBulkBusy(busyKey)
     let ok = 0
     const failures: string[] = []
-    // Sequential to avoid hammering the API and to keep audit ordering sane.
     for (const s of targets) {
       try {
         const res = await fetch('/api/shifts/sessions', {
@@ -237,14 +163,10 @@ export default function ShiftsPage() {
     }
     setBulkBusy(null)
     await load()
-    if (failures.length > 0) {
-      alert(`نجح: ${ok}\nفشل: ${failures.length}\n\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? '\n…' : ''}`)
-    } else {
-      alert(`تم تنفيذ الإجراء على ${ok} جلسة بنجاح`)
-    }
+    alert(failures.length > 0
+      ? `نجح: ${ok}\nفشل: ${failures.length}\n\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? '\n…' : ''}`
+      : `تم تنفيذ الإجراء على ${ok} جلسة بنجاح`)
   }
-
-  const isAdminTier = myRole === 'ADMIN' || myRole === 'MANAGER'
 
   if (loading) return (
     <div className="flex items-center justify-center p-20 text-gray-400 gap-2">
@@ -254,236 +176,287 @@ export default function ShiftsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">المناوبات</h1>
-          <p className="text-sm text-gray-500 mt-0.5">تسجيل الدخول والخروج وتسليم الجلسات</p>
-        </div>
-        {!myActive && !showCheckIn && (
-          <button onClick={() => setShowCheckIn(true)} className="btn-primary">
-            <LogIn size={16} /> تسجيل دخول
-          </button>
-        )}
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">المناوبات</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {isEmployee ? 'تسجيل دخولك وخروجك' : 'تسجيل الدخول والخروج وتسليم الجلسات'}
+        </p>
       </div>
 
-      {/* My active session */}
-      {myActive && (
+      {/* ── EMPLOYEE: one-click "my shift" card ── */}
+      {isEmployee && (
         <div className="card p-5 border-r-4 border-emerald-500">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <p className="text-xs text-gray-400 uppercase font-bold mb-1">جلستي الحالية</p>
-              <p className="text-lg font-bold text-gray-900">
-                {STATUS_LABEL[myActive.status].label}
-                {myActive.shiftNumber && <span className="text-sm font-normal text-gray-500"> — {SHIFT_LABEL[myActive.shiftNumber]}</span>}
-              </p>
-              <p className="text-xs text-gray-500 mt-1 font-mono">
-                بدأت: {fmtSyria(myActive.startAt)} · {myActive.wallets.length} محفظة
-              </p>
+          {myOpen ? (
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-xs text-gray-400 uppercase font-bold mb-1">جلستي الحالية</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {STATUS_LABEL[myOpen.status].label}
+                  {myOpen.shiftNumber && (
+                    <span className="text-sm font-normal text-gray-500"> — {SHIFT_LABEL[myOpen.shiftNumber]}</span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 mt-1 font-mono">
+                  بدأت: {fmtSyria(myOpen.startAt)} · {myOpen.wallets.length} محفظة
+                </p>
+              </div>
+              <div>
+                {myOpen.status === 'ACTIVE' && (
+                  <button onClick={() => handleAction(myOpen.id, 'requestEnd')} className="btn-primary">
+                    <LogOut size={16} /> طلب تسجيل خروج
+                  </button>
+                )}
+                {myOpen.status === 'PENDING_END' && (
+                  <span className="text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg">
+                    طلبت الخروج — بانتظار وصول الموظف التالي
+                  </span>
+                )}
+                {myOpen.status === 'PENDING_START' && (
+                  <span className="text-xs text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg">
+                    بانتظار اعتماد التسليم
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {myActive.status === 'ACTIVE' && (
-                <button onClick={() => handleAction(myActive.id, 'requestEnd')} className="btn-secondary">
-                  <LogOut size={14} /> طلب تسجيل خروج
-                </button>
-              )}
-              {myActive.status === 'PENDING_END' && (
-                <span className="text-xs text-amber-700 bg-amber-50 px-3 py-1 rounded-lg">
-                  بانتظار وصول الموظف التالي وموافقة المشرف
-                </span>
-              )}
+          ) : (
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                  <CalendarClock size={12} /> مناوبتي
+                </p>
+                {myShift ? (
+                  <>
+                    <p className="text-lg font-bold text-gray-900">
+                      شيفت {myShift.shiftNumber === 'ONE' ? 'أول' : myShift.shiftNumber === 'TWO' ? 'ثاني' : 'ثالث'}
+                      <span className="text-sm font-normal text-gray-500"> — {myShift.windowLabel}</span>
+                    </p>
+                    {myShift.handoverNames.length > 0 && (
+                      <p className="text-xs text-violet-700 mt-1">
+                        التسليم من: {myShift.handoverNames.join('، ')}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500">لا توجد مناوبة مجدولة لك في هذا الوقت.</p>
+                )}
+              </div>
+              <button
+                onClick={handleCheckIn}
+                disabled={submitting || !myShift}
+                className="btn-primary"
+              >
+                {submitting ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+                تسجيل دخول
+              </button>
             </div>
+          )}
+          {msg && <p className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg mt-3">{msg}</p>}
+        </div>
+      )}
+
+      {/* ── EMPLOYEE: own recent sessions ── */}
+      {isEmployee && myRecent.length > 0 && (
+        <div className="card p-4">
+          <h2 className="font-bold text-gray-800 mb-3">جلساتي السابقة</h2>
+          <div className="space-y-2">
+            {myRecent.map(s => (
+              <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
+                <p className="text-xs text-gray-500 font-mono">
+                  {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}
+                  {s.durationMinutes != null && (
+                    <span className="ms-2 text-gray-400">
+                      ({Math.floor(s.durationMinutes / 60)}س {s.durationMinutes % 60}د)
+                    </span>
+                  )}
+                </p>
+                <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Pending approvals (Manager view) */}
-      {pendingApprovals.length > 0 && (
-        <div className="card p-4">
-          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-            <h2 className="font-bold text-gray-800 flex items-center gap-2">
-              <ArrowRightLeft size={16} className="text-blue-500" />
-              موافقات تبديل المناوبات المعلقة ({pendingApprovals.length})
-            </h2>
-            {isAdminTier && pendingApprovals.length > 1 && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleBulk(
-                    'approveHandover',
-                    pendingApprovals,
-                    `اعتماد كل التبديلات المعلقة (${pendingApprovals.length})؟\n\nسيتم تجاوز فحص المحافظ والجدول لكل منها.`,
-                    'approve',
+      {/* ── ADMIN / MANAGER / SUPERVISOR: management view ── */}
+      {!isEmployee && (
+        <>
+          {/* Pending approvals */}
+          {pendingApprovals.length > 0 && (
+            <div className="card p-4">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                <h2 className="font-bold text-gray-800 flex items-center gap-2">
+                  <ArrowRightLeft size={16} className="text-blue-500" />
+                  موافقات تبديل المناوبات المعلقة ({pendingApprovals.length})
+                </h2>
+                {isAdminTier && pendingApprovals.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleBulk('approveHandover', pendingApprovals,
+                        `اعتماد كل التبديلات المعلقة (${pendingApprovals.length})؟`, 'approve')}
+                      disabled={bulkBusy !== null}
+                      className="btn-primary btn-sm"
+                    >
+                      {bulkBusy === 'approve' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                      اعتماد الكل
+                    </button>
+                    <button
+                      onClick={() => handleBulk('cancel', pendingApprovals,
+                        `رفض كل التبديلات المعلقة (${pendingApprovals.length})؟`, 'reject')}
+                      disabled={bulkBusy !== null}
+                      className="btn-ghost btn-sm text-rose-600 hover:bg-rose-50"
+                    >
+                      {bulkBusy === 'reject' ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                      رفض الكل
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                {pendingApprovals.map(s => (
+                  <div key={s.id} className="border border-blue-200 bg-blue-50/30 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
+                        {s.user.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{s.user.name}</p>
+                        <p className="text-xs text-gray-500">
+                          يطلب بدء مناوبة · {s.wallets.length} محفظة · {fmtSyria(s.startAt, false)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleAction(s.id, 'approveHandover')} className="btn-primary btn-sm">
+                        <Check size={13} /> اعتماد التبديل
+                      </button>
+                      {isAdminTier && (
+                        <button
+                          onClick={() => handleAction(s.id, 'cancel')}
+                          className="btn-ghost btn-sm text-rose-600 hover:bg-rose-50"
+                          title="رفض طلب التبديل"
+                        >
+                          <X size={13} /> رفض
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active sessions */}
+          <div className="card p-4">
+            {(() => {
+              const pendingEndCount = allActive.filter(s => s.status === 'PENDING_END').length
+              return (
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <h2 className="font-bold text-gray-800">الجلسات النشطة ({allActive.length})</h2>
+                  {isAdminTier && pendingEndCount > 1 && (
+                    <button
+                      onClick={() => handleBulk('forceComplete',
+                        allActive.filter(s => s.status === 'PENDING_END'),
+                        `إنهاء كل الجلسات المعلّقة بانتظار الإغلاق (${pendingEndCount})؟`, 'forceComplete')}
+                      disabled={bulkBusy !== null}
+                      className="btn-secondary btn-sm"
+                    >
+                      {bulkBusy === 'forceComplete' ? <Loader2 size={13} className="animate-spin" /> : <StopCircle size={13} />}
+                      إنهاء كل المعلّقة ({pendingEndCount})
+                    </button>
                   )}
-                  disabled={bulkBusy !== null}
-                  className="btn-primary btn-sm"
-                >
-                  {bulkBusy === 'approve' ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                  اعتماد الكل
-                </button>
-                <button
-                  onClick={() => handleBulk(
-                    'cancel',
-                    pendingApprovals,
-                    `رفض كل التبديلات المعلقة (${pendingApprovals.length})؟\n\nستُلغى جميعها وتظهر كـ "ملغاة" في السجلات.`,
-                    'reject',
-                  )}
-                  disabled={bulkBusy !== null}
-                  className="btn-ghost btn-sm text-rose-600 hover:bg-rose-50"
-                >
-                  {bulkBusy === 'reject' ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
-                  رفض الكل
-                </button>
+                </div>
+              )
+            })()}
+            {allActive.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-6">لا توجد جلسات نشطة الآن</p>
+            ) : (
+              <div className="space-y-2">
+                {allActive.map(s => (
+                  <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      {s.user.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={s.user.avatarUrl} alt={s.user.name} className="w-9 h-9 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                          {s.user.name.charAt(0)}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-medium text-sm">{s.user.name}</p>
+                        <p className="text-xs text-gray-500 font-mono">{fmtSyria(s.startAt)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
+                      <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
+                      {isAdminTier && (
+                        <button
+                          onClick={() => handleAction(s.id, 'forceComplete')}
+                          className="btn-ghost p-1.5 text-gray-500 hover:text-emerald-600"
+                          title="إنهاء يدوياً"
+                        >
+                          <StopCircle size={14} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setEditingSession(s)}
+                        className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
+                        title="تعديل الجلسة"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-          <div className="space-y-2">
-            {pendingApprovals.map(s => (
-              <div key={s.id} className="border border-blue-200 bg-blue-50/30 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
-                    {s.user.name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">{s.user.name}</p>
-                    <p className="text-xs text-gray-500">
-                      يطلب بدء مناوبة · {s.wallets.length} محفظة · {fmtSyria(s.startAt, false)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => handleAction(s.id, 'approveHandover')} className="btn-primary btn-sm">
-                    <Check size={13} /> اعتماد التبديل
-                  </button>
-                  {isAdminTier && (
-                    <button
-                      onClick={() => handleAction(s.id, 'cancel')}
-                      className="btn-ghost btn-sm text-rose-600 hover:bg-rose-50"
-                      title="رفض طلب التبديل وإلغاء الجلسة"
-                    >
-                      <X size={13} /> رفض
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Active sessions across all employees */}
-      <div className="card p-4">
-        {(() => {
-          const pendingEndCount = allActive.filter(s => s.status === 'PENDING_END').length
-          return (
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-              <h2 className="font-bold text-gray-800">الجلسات النشطة ({allActive.length})</h2>
-              {isAdminTier && pendingEndCount > 1 && (
-                <button
-                  onClick={() => handleBulk(
-                    'forceComplete',
-                    allActive.filter(s => s.status === 'PENDING_END'),
-                    `إنهاء كل الجلسات المعلّقة بانتظار الإغلاق (${pendingEndCount})؟\n\nستُغلق جميعها كـ "مكتملة" بدون انتظار التسليم.`,
-                    'forceComplete',
-                  )}
-                  disabled={bulkBusy !== null}
-                  className="btn-secondary btn-sm"
-                  title="إنهاء يدوي لكل الجلسات المعلّقة بانتظار التسليم"
-                >
-                  {bulkBusy === 'forceComplete' ? <Loader2 size={13} className="animate-spin" /> : <StopCircle size={13} />}
-                  إنهاء كل المعلّقة ({pendingEndCount})
-                </button>
-              )}
-            </div>
-          )
-        })()}
-        {allActive.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-6">لا توجد جلسات نشطة الآن</p>
-        ) : (
-          <div className="space-y-2">
-            {allActive.map(s => (
-              <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  {s.user.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.user.avatarUrl} alt={s.user.name} className="w-9 h-9 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white flex items-center justify-center font-bold text-sm">
-                      {s.user.name.charAt(0)}
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-medium text-sm">{s.user.name}</p>
-                    <p className="text-xs text-gray-500 font-mono">{fmtSyria(s.startAt)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
-                  <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
-                  {isAdminTier && (
-                    <button
-                      onClick={() => handleAction(s.id, 'forceComplete')}
-                      className="btn-ghost p-1.5 text-gray-500 hover:text-emerald-600"
-                      title="إنهاء يدوياً (إغلاق الجلسة بدون انتظار تسليم)"
-                    >
-                      <StopCircle size={14} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setEditingSession(s)}
-                    className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
-                    title="تعديل الجلسة"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Recently closed sessions — supervisors edit timing / shift number here */}
-      {recent.length > 0 && (
-        <div className="card p-4">
-          <h2 className="font-bold text-gray-800 mb-3">جلسات مغلقة حديثاً ({recent.length})</h2>
-          <div className="space-y-2">
-            {recent.map(s => (
-              <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  {s.user.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.user.avatarUrl} alt={s.user.name} className="w-9 h-9 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 text-white flex items-center justify-center font-bold text-sm">
-                      {s.user.name.charAt(0)}
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-medium text-sm">{s.user.name}</p>
-                    <p className="text-xs text-gray-500 font-mono">
-                      {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}
-                      {s.durationMinutes != null && (
-                        <span className="ms-2 text-gray-400">
-                          ({Math.floor(s.durationMinutes / 60)}س {s.durationMinutes % 60}د)
-                        </span>
+          {/* Recently closed */}
+          {recent.length > 0 && (
+            <div className="card p-4">
+              <h2 className="font-bold text-gray-800 mb-3">جلسات مغلقة حديثاً ({recent.length})</h2>
+              <div className="space-y-2">
+                {recent.map(s => (
+                  <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      {s.user.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={s.user.avatarUrl} alt={s.user.name} className="w-9 h-9 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 text-white flex items-center justify-center font-bold text-sm">
+                          {s.user.name.charAt(0)}
+                        </div>
                       )}
-                    </p>
+                      <div>
+                        <p className="font-medium text-sm">{s.user.name}</p>
+                        <p className="text-xs text-gray-500 font-mono">
+                          {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}
+                          {s.durationMinutes != null && (
+                            <span className="ms-2 text-gray-400">
+                              ({Math.floor(s.durationMinutes / 60)}س {s.durationMinutes % 60}د)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
+                      <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
+                      <button
+                        onClick={() => setEditingSession(s)}
+                        className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
+                        title="تعديل الجلسة"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`badge ${STATUS_LABEL[s.status].cls}`}>{STATUS_LABEL[s.status].label}</span>
-                  <span className="text-xs text-gray-500">{s.wallets.length} محفظة</span>
-                  <button
-                    onClick={() => setEditingSession(s)}
-                    className="btn-ghost p-1.5 text-gray-500 hover:text-blue-600"
-                    title="تعديل الجلسة"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Session edit modal */}
@@ -495,99 +468,6 @@ export default function ShiftsPage() {
           onClose={() => setEditingSession(null)}
           onSaved={() => { setEditingSession(null); load() }}
         />
-      )}
-
-      {/* Check-in modal */}
-      {showCheckIn && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
-              <h2 className="font-bold text-gray-800 flex items-center gap-2">
-                <LogIn size={18} /> تسجيل دخول جلسة
-              </h2>
-              <button onClick={() => setShowCheckIn(false)} className="btn-ghost p-1.5"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">المناوبة</label>
-                <select className="input" value={shiftNumber} onChange={e => setShiftNumber(e.target.value as typeof shiftNumber)}>
-                  <option value="">— تلقائي —</option>
-                  <option value="ONE">{SHIFT_LABEL.ONE}</option>
-                  <option value="TWO">{SHIFT_LABEL.TWO}</option>
-                  <option value="THREE">{SHIFT_LABEL.THREE}</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">تبديل مع موظف خارج (اختياري)</label>
-                <select className="input" value={handoverFrom} onChange={e => setHandoverFrom(e.target.value)}>
-                  <option value="">— لا تبديل —</option>
-                  {employees.map(e => (
-                    <option key={e.id} value={e.id}>{e.name}{e.jobTitle ? ` (${e.jobTitle})` : ''}</option>
-                  ))}
-                </select>
-                {counterpartLoading && (
-                  <p className="text-[11px] text-gray-400 mt-1.5">جاري البحث عن الموظف المقابل…</p>
-                )}
-                {!counterpartLoading && counterpart && (
-                  <div className="mt-1.5 text-[11px] bg-emerald-50 border border-emerald-200 text-emerald-800 rounded px-2 py-1.5">
-                    ✓ الموظف المقابل (حسب المحافظ): <strong>{counterpart.name}</strong>
-                    {counterpart.sessionStatus === 'PENDING_END' && (
-                      <span className="block opacity-75 mt-0.5">(طلب إنهاء جلسته بالفعل — التسليم سيكتمل تلقائياً)</span>
-                    )}
-                    {counterpart.sessionStatus === 'ACTIVE' && (
-                      <span className="block opacity-75 mt-0.5">(لم يطلب إنهاء جلسته بعد — جلستك ستنتظر طلبه)</span>
-                    )}
-                  </div>
-                )}
-                {!counterpartLoading && counterpartCandidates.length > 0 && (
-                  <div className="mt-1.5 text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded px-2 py-1.5">
-                    ⚠ عدة موظفين يحملون هذه المحافظ — اختر يدوياً من القائمة أعلاه:
-                    <ul className="mt-1 list-disc list-inside opacity-90">
-                      {counterpartCandidates.map(c => (
-                        <li key={c.id}>{c.name}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {!counterpartLoading && !counterpart && counterpartCandidates.length === 0 && walletIds.size > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1.5">لا يوجد موظف سابق لهذه المحافظ — سيتم التشغيل بدون تسليم.</p>
-                )}
-                <p className="text-[10px] text-gray-400 mt-1">إن اخترت موظفاً، يجب أن تكون لديه جلسة نشطة.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">المحافظ التي ستعمل عليها</label>
-                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                  {allowedWallets.map(w => (
-                    <label key={w.id} className={`flex items-center gap-2 p-2 rounded-lg border text-sm cursor-pointer ${
-                      walletIds.has(w.id) ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                    }`}>
-                      <input type="checkbox" checked={walletIds.has(w.id)} onChange={() => toggleWallet(w.id)} />
-                      <span className="truncate">{w.name}</span>
-                      <span className="text-[10px] text-gray-400">{w.currency}</span>
-                    </label>
-                  ))}
-                  {allowedWallets.length === 0 && (
-                    <p className="text-gray-400 text-sm col-span-2 text-center py-4">
-                      لم يتم تخصيص أي محافظ لك. اطلب من المدير ضبطها.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات (اختياري)</label>
-                <textarea className="input min-h-[60px]" value={notes} onChange={e => setNotes(e.target.value)} />
-              </div>
-              {msg && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{msg}</p>}
-              <div className="flex gap-3">
-                <button onClick={handleCheckIn} disabled={submitting} className="btn-primary flex-1 justify-center">
-                  {submitting ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-                  تسجيل دخول
-                </button>
-                <button onClick={() => setShowCheckIn(false)} className="btn-secondary flex-1 justify-center">إلغاء</button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   )

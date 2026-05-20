@@ -48,6 +48,8 @@ const upsertSchema = z.object({
     notes: z.string().optional(),
     // Account IDs the employee will handle on this shift (planned wallets)
     walletIds: z.array(z.string()).optional(),
+    // Previous-shift employee(s) this person takes over from
+    handoverFromUserIds: z.array(z.string()).optional(),
   })),
 })
 
@@ -90,6 +92,7 @@ export async function POST(req: NextRequest) {
           assignedById: session.userId,
           isDayOff: !!s.isDayOff,
           notes: s.notes,
+          handoverFromUserIds: s.isDayOff ? [] : (s.handoverFromUserIds ?? []),
         })),
         skipDuplicates: true,
       })

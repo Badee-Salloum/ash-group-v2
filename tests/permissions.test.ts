@@ -21,6 +21,12 @@ describe('hasPermission', () => {
     expect(hasPermission('EMPLOYEE', PERMISSIONS.EMPLOYEES_DELETE)).toBe(false)
   })
 
+  it('EMPLOYEE cannot view financial data (accounts / transactions / customers)', () => {
+    expect(hasPermission('EMPLOYEE', PERMISSIONS.TRANSACTIONS_VIEW)).toBe(false)
+    expect(hasPermission('EMPLOYEE', PERMISSIONS.ACCOUNTS_VIEW)).toBe(false)
+    expect(hasPermission('EMPLOYEE', PERMISSIONS.CUSTOMERS_VIEW)).toBe(false)
+  })
+
   it('SUPERVISOR can upload reconciliation files (recently granted)', () => {
     expect(hasPermission('SUPERVISOR', PERMISSIONS.RECONCILIATION_UPLOAD)).toBe(true)
   })

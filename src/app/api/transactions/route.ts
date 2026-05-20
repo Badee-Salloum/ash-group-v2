@@ -8,6 +8,10 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getSession()
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    // Front-line EMPLOYEEs never see transaction/financial data.
+    if (session.role === UserRole.EMPLOYEE) {
+      return NextResponse.json({ error: 'لا تملك صلاحية' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(req.url)
     const page = parseInt(searchParams.get('page') || '1')

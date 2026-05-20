@@ -15,6 +15,10 @@
 //      same input twice produces byte-identical output (helps testing and
 //      makes the "اقتراح" button idempotent for users).
 
+import { addDays } from '@/lib/datetime'
+import { previousShift, previousShiftIsPriorDay } from '@/lib/shifts/shiftWindow'
+import { suggestHandover } from './handoverSuggest'
+
 export type ShiftNumber = 'ONE' | 'TWO' | 'THREE'
 
 export interface Employee {
@@ -27,6 +31,10 @@ export interface ShiftPlan {
   shiftNumber: ShiftNumber
   userId: string
   isDayOff: boolean
+  // Previous-shift employee(s) this person takes over from. Seeded here by
+  // index pairing (no wallets at generate time); the schedule page can
+  // re-suggest by wallet overlap afterward.
+  handoverFromUserIds: string[]
 }
 
 export interface GenerateResult {
@@ -127,8 +135,36 @@ export function generateWeeklySchedule(opts: {
           shiftNumber: sn,
           userId: p.userId,
           isDayOff: p.isDayOff,
+          handoverFromUserIds: [],
         })
       }
+    }
+  }
+
+  // ── Handover pass — pair each working employee with the previous shift's
+  // working roster. No wallets at generate time, so suggestHandover falls
+  // back to index pairing. The previous shift of ONE belongs to the prior
+  // calendar day (THREE), so its predecessor may fall outside this 7-day
+  // window — those simply get an empty handover set.
+  const workingByCell = new Map<string, ShiftPlan[]>()
+  for (const s of shifts) {
+    if (s.isDayOff) continue
+    const key = `${s.date}|${s.shiftNumber}`
+    const arr = workingByCell.get(key)
+    if (arr) arr.push(s)
+    else workingByCell.set(key, [s])
+  }
+  for (const [key, members] of workingByCell) {
+    const [dateStr, sn] = key.split('|') as [string, ShiftNumber]
+    const prevSn = previousShift(sn)
+    const prevDate = previousShiftIsPriorDay(sn) ? addDays(dateStr, -1) : dateStr
+    const prevMembers = workingByCell.get(`${prevDate}|${prevSn}`) || []
+    const handover = suggestHandover(
+      members.map(m => ({ userId: m.userId, walletIds: [] })),
+      prevMembers.map(m => ({ userId: m.userId, walletIds: [] })),
+    )
+    for (const m of members) {
+      m.handoverFromUserIds = handover[m.userId] || []
     }
   }
 

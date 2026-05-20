@@ -315,6 +315,10 @@ model ShiftSession {
   durationMinutes    Int?
   status             ShiftSessionStatus  @default(ACTIVE)
   handoverFromUserId String?
+  // Phase 4 — the full set of previous-shift employees this session takes
+  // over from (copied from the scheduled Shift at check-in). Auto-approval
+  // completes every one of these outgoing sessions.
+  handoverFromUserIds String[] @default([])
   approvedBy         User?               @relation("ShiftSessionApprover", fields: [approvedById], references: [id])
   approvedById       String?
   approvedAt         DateTime?
@@ -355,6 +359,11 @@ model Shift {
   notes        String?
   // Phase 3 — wallets this employee is planned to handle on this shift
   wallets      ShiftWallet[]
+  // Phase 4 — the previous-shift employee(s) this person takes over from.
+  // Check-in is blocked until ALL of these users have requested check-out.
+  // A plain String[] of user ids (no FK relation — mirrors the existing
+  // Account.walletIdentifiers pattern).
+  handoverFromUserIds String[] @default([])
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 

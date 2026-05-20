@@ -9,6 +9,10 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getSession()
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    // Front-line EMPLOYEEs never see customer/financial data.
+    if (session.role === UserRole.EMPLOYEE) {
+      return NextResponse.json({ error: 'لا تملك صلاحية' }, { status: 403 })
+    }
 
     const accountIdFilter = req.nextUrl.searchParams.get('accountId') || undefined
     const currencyFilter = req.nextUrl.searchParams.get('currency') || undefined

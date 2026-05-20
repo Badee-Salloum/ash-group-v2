@@ -12,6 +12,18 @@ export async function GET(req: NextRequest) {
     const session = await getSession()
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
+    // Front-line EMPLOYEEs may only see a NAME LIST of colleagues + branch
+    // managers — never financial fields (salary), contact details, or
+    // hierarchy. Higher roles get the full record below.
+    if (session.role === UserRole.EMPLOYEE) {
+      const minimal = await db.user.findMany({
+        where: { isActive: true, role: { in: [UserRole.EMPLOYEE, UserRole.MANAGER] } },
+        select: { id: true, name: true, role: true, jobTitle: true, avatarUrl: true },
+        orderBy: [{ jobTitle: 'asc' }, { name: 'asc' }],
+      })
+      return NextResponse.json({ success: true, data: minimal })
+    }
+
     const includeInactive = req.nextUrl.searchParams.get('includeInactive') === '1'
     // MANAGER (مدير فرع) only sees EMPLOYEE-tier accounts.
     const isManagerScope = session.role === UserRole.MANAGER

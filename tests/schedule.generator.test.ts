@@ -133,3 +133,32 @@ describe('generateWeeklySchedule — output shape', () => {
     expect(r.shifts[r.shifts.length - 1].date).toBe('2026-05-16') // Saturday
   })
 })
+
+describe('generateWeeklySchedule — handover seeding', () => {
+  it('every emitted ShiftPlan carries a handoverFromUserIds array', () => {
+    const employees = ['a', 'b', 'c', 'd', 'e', 'f'].map(i => emp(i, 0))
+    const r = generateWeeklySchedule({ weekStart: SUNDAY, employees, minPerShift: 1 })
+    expect(r.shifts.every(s => Array.isArray(s.handoverFromUserIds))).toBe(true)
+  })
+
+  it('a shift-TWO employee hands over from a shift-ONE employee (same day)', () => {
+    // 6 employees, round-robin: a→ONE b→TWO c→THREE d→ONE e→TWO f→THREE.
+    const employees = ['a', 'b', 'c', 'd', 'e', 'f'].map(i => emp(i, 0))
+    const r = generateWeeklySchedule({ weekStart: SUNDAY, employees, minPerShift: 1 })
+    const oneUsers = new Set(
+      r.shifts.filter(s => s.shiftNumber === 'ONE').map(s => s.userId),
+    )
+    const twoSample = r.shifts.find(s => s.shiftNumber === 'TWO')!
+    expect(twoSample.handoverFromUserIds.length).toBeGreaterThan(0)
+    for (const src of twoSample.handoverFromUserIds) {
+      expect(oneUsers.has(src)).toBe(true)
+    }
+  })
+
+  it('shift ONE on the first day has no handover (prior-day THREE is outside the week)', () => {
+    const employees = ['a', 'b', 'c'].map(i => emp(i, 0))
+    const r = generateWeeklySchedule({ weekStart: SUNDAY, employees, minPerShift: 1 })
+    const firstOne = r.shifts.find(s => s.shiftNumber === 'ONE' && s.date === '2026-05-10')!
+    expect(firstOne.handoverFromUserIds).toEqual([])
+  })
+})

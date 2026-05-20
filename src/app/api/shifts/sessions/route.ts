@@ -4,6 +4,7 @@ import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
 import { tryAutoApproveHandover } from '@/lib/shifts/autoApprove'
 import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
+import { checkinWindowUtc, type ShiftNumber } from '@/lib/shifts/shiftWindow'
 import { z } from 'zod'
 
 // Validate that the requested wallet IDs are allowed for this user at this
@@ -99,7 +100,13 @@ export async function GET(req: NextRequest) {
   const status = params.get('status') || undefined
 
   const where: Record<string, unknown> = {}
-  if (userId) where.userId = userId
+  // EMPLOYEE-role callers may only ever see their OWN sessions — ignore any
+  // userId param they pass. Higher roles may query any/all.
+  if (session.role === UserRole.EMPLOYEE) {
+    where.userId = session.userId
+  } else if (userId) {
+    where.userId = userId
+  }
   if (status) where.status = status
 
   const sessions = await db.shiftSession.findMany({
@@ -116,97 +123,115 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ success: true, data: sessions })
 }
 
-const checkinSchema = z.object({
-  shiftNumber: z.enum(['ONE', 'TWO', 'THREE']).optional(),
-  walletIds: z.array(z.string()).default([]),
-  handoverFromUserId: z.string().optional(),
-  notes: z.string().optional(),
-})
-
+// Check-in is fully schedule-driven — the client sends no parameters. The
+// server resolves the caller's scheduled Shift (must be inside its check-in
+// window), copies its shiftNumber + planned wallets + handover sources, and
+// enforces that every handover source has already requested check-out.
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession()
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
-    const body = await req.json()
-    const data = checkinSchema.parse(body)
-
-    // If handover requested, the previous (outgoing) session must already be in PENDING_END
-    let initialStatus: 'ACTIVE' | 'PENDING_START' = 'ACTIVE'
-    if (data.handoverFromUserId) {
-      const outgoing = await db.shiftSession.findFirst({
-        where: {
-          userId: data.handoverFromUserId,
-          status: { in: ['ACTIVE', 'PENDING_END'] },
-        },
-        orderBy: { startAt: 'desc' },
-      })
-      if (!outgoing) {
-        return NextResponse.json({
-          error: 'لا توجد جلسة نشطة للموظف السابق. اطلب منه تسجيل خروج أولاً.',
-        }, { status: 400 })
-      }
-      // Auto-set outgoing to PENDING_END only if still ACTIVE.
-      // updateMany() with a status guard prevents two concurrent handovers
-      // from both flipping the same outgoing session.
-      if (outgoing.status === 'ACTIVE') {
-        const flipped = await db.shiftSession.updateMany({
-          where: { id: outgoing.id, status: 'ACTIVE' },
-          data: { status: 'PENDING_END' },
-        })
-        if (flipped.count === 0) {
-          return NextResponse.json({
-            error: 'الجلسة السابقة قيد التسليم بالفعل. حاول مجدداً.',
-          }, { status: 409 })
-        }
-      }
-      initialStatus = 'PENDING_START'
-    } else {
-      // Without handover: ensure no other active session for this user
-      const existing = await db.shiftSession.findFirst({
-        where: { userId: session.userId, status: { in: ['ACTIVE', 'PENDING_END', 'PENDING_START'] } },
-      })
-      if (existing) {
-        return NextResponse.json({
-          error: 'لديك جلسة نشطة بالفعل. سجّل خروج منها أولاً.',
-        }, { status: 400 })
-      }
-    }
-
-    // Validate wallet ids against the scheduled shift's planned wallets
-    // (fallback to active-accounts check when there is no schedule today).
-    const walletError = await validateWalletsForShift({
-      userId: session.userId,
-      shiftNumber: data.shiftNumber ?? null,
-      walletIds: data.walletIds,
+    // 1 — Already has an open session?
+    const existing = await db.shiftSession.findFirst({
+      where: {
+        userId: session.userId,
+        status: { in: ['ACTIVE', 'PENDING_END', 'PENDING_START'] },
+      },
+      select: { id: true },
     })
-    if (walletError) {
-      return NextResponse.json({ error: walletError.error }, { status: walletError.status })
+    if (existing) {
+      return NextResponse.json(
+        { error: 'لديك جلسة مفتوحة بالفعل. سجّل خروج منها أولاً.' },
+        { status: 409 },
+      )
     }
 
+    // 2 — Resolve the applicable scheduled Shift. Look at yesterday + today
+    // (a THREE shift dated yesterday is still checkin-able after midnight) and
+    // pick the one whose absolute check-in window currently contains `now`.
+    const nowMs = Date.now()
+    const today = damascusDateStr(new Date())
+    const yesterday = addDays(today, -1)
+    const candidates = await db.shift.findMany({
+      where: {
+        userId: session.userId,
+        isDayOff: false,
+        date: {
+          gte: damascusDayStartUtc(yesterday),
+          lt: damascusDayStartUtc(addDays(today, 1)),
+        },
+      },
+      include: { wallets: { select: { accountId: true } } },
+    })
+    let scheduled: (typeof candidates)[number] | null = null
+    for (const c of candidates) {
+      const dayKey = damascusDateStr(c.date)
+      const w = checkinWindowUtc(dayKey, c.shiftNumber as ShiftNumber)
+      if (nowMs >= w.openFrom.getTime() && nowMs <= w.end.getTime()) {
+        scheduled = c
+        break
+      }
+    }
+    if (!scheduled) {
+      return NextResponse.json(
+        { error: 'لست مجدولاً لمناوبة في هذا الوقت. تواصل مع المشرف.' },
+        { status: 403 },
+      )
+    }
+
+    // 3 — Multi-source handover gate. Every source must have at least
+    // requested check-out; if any is still plain ACTIVE → hard block.
+    const sources: string[] = scheduled.handoverFromUserIds || []
+    let initialStatus: 'ACTIVE' | 'PENDING_START' = 'ACTIVE'
+    if (sources.length > 0) {
+      const blocking: string[] = []
+      let anyPendingEnd = false
+      for (const srcId of sources) {
+        const sess = await db.shiftSession.findFirst({
+          where: { userId: srcId },
+          orderBy: { startAt: 'desc' },
+          select: { status: true },
+        })
+        if (sess?.status === 'ACTIVE') blocking.push(srcId)
+        else if (sess?.status === 'PENDING_END') anyPendingEnd = true
+      }
+      if (blocking.length > 0) {
+        const names = await db.user.findMany({
+          where: { id: { in: blocking } },
+          select: { name: true },
+        })
+        return NextResponse.json(
+          {
+            error: `في انتظار تسجيل خروج: ${names.map((n: { name: string }) => n.name).join('، ')}`,
+          },
+          { status: 409 },
+        )
+      }
+      // Sources are all PENDING_END/COMPLETED/absent. Only park as
+      // PENDING_START when there is a real PENDING_END to hand over from.
+      initialStatus = anyPendingEnd ? 'PENDING_START' : 'ACTIVE'
+    }
+
+    // 4 — Create the session. shiftNumber + wallets come from the schedule.
+    const walletIds = scheduled.wallets.map((w: { accountId: string }) => w.accountId)
     const created = await db.shiftSession.create({
       data: {
         userId: session.userId,
-        shiftNumber: data.shiftNumber,
+        shiftNumber: scheduled.shiftNumber,
         status: initialStatus,
-        handoverFromUserId: data.handoverFromUserId,
-        notes: data.notes,
-        wallets: {
-          create: data.walletIds.map(accountId => ({ accountId })),
-        },
+        handoverFromUserId: sources[0] ?? null,
+        handoverFromUserIds: sources,
+        wallets: { create: walletIds.map((accountId: string) => ({ accountId })) },
       },
     })
 
     await audit(session.userId, 'CHECK_IN', 'ShiftSession', created.id, {
-      shiftNumber: data.shiftNumber,
-      walletCount: data.walletIds.length,
-      handover: !!data.handoverFromUserId,
+      shiftNumber: scheduled.shiftNumber,
+      walletCount: walletIds.length,
+      handoverSources: sources.length,
     })
 
-    // Attempt auto-approval for handovers. If the outgoing employee hasn't
-    // requested end yet this returns { approved: false, reason: "في انتظار…" }
-    // — the session stays PENDING_START until the outgoing-side trigger fires
-    // from PATCH requestEnd (see below).
     let autoApproved = false
     let autoReason: string | undefined
     let finalStatus: string = created.status
@@ -283,11 +308,14 @@ export async function PATCH(req: NextRequest) {
       if (target.status !== 'PENDING_START') {
         return NextResponse.json({ error: 'الجلسة ليست بانتظار الموافقة' }, { status: 400 })
       }
-      const outgoingUserId = target.handoverFromUserId
+      // All handover sources (multi-value field, legacy single as fallback).
+      const outgoingUserIds = target.handoverFromUserIds?.length
+        ? target.handoverFromUserIds
+        : (target.handoverFromUserId ? [target.handoverFromUserId] : [])
       const now = new Date()
       // Atomic transaction: only one approver can flip the statuses.
-      // We use updateMany() with a status guard so concurrent calls collide
-      // on row state (the second caller updates 0 rows).
+      // updateMany() with a status guard makes concurrent calls collide
+      // (the second caller updates 0 rows).
       await db.$transaction(async (tx: typeof db) => {
         const flipIncoming = await tx.shiftSession.updateMany({
           where: { id: sessionId, status: 'PENDING_START' },
@@ -301,7 +329,8 @@ export async function PATCH(req: NextRequest) {
         if (flipIncoming.count === 0) {
           throw new Error('الجلسة لم تعد بانتظار الموافقة')
         }
-        if (outgoingUserId) {
+        // Complete every source's PENDING_END session.
+        for (const outgoingUserId of outgoingUserIds) {
           const outgoing = await tx.shiftSession.findFirst({
             where: { userId: outgoingUserId, status: 'PENDING_END' },
             orderBy: { startAt: 'desc' },

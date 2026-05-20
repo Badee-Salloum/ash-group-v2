@@ -16,6 +16,10 @@ export async function GET() {
   try {
     const session = await getSession()
     if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    // Front-line EMPLOYEEs never see financial accounts.
+    if (session.role === UserRole.EMPLOYEE) {
+      return NextResponse.json({ error: 'لا تملك صلاحية' }, { status: 403 })
+    }
 
     let accounts
     if (session.role === UserRole.ACCOUNT_MGR) {

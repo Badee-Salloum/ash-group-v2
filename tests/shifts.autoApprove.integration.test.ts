@@ -93,7 +93,7 @@ describe('tryAutoApproveHandover — incoming trigger', () => {
     expect(transaction).not.toHaveBeenCalled()
   })
 
-  it('rejects when wallet sets differ', async () => {
+  it('rejects when the incoming wallets are not covered by the sources', async () => {
     findUnique.mockResolvedValueOnce(baseIn)
     findFirst.mockResolvedValueOnce({
       ...baseOut,
@@ -101,14 +101,17 @@ describe('tryAutoApproveHandover — incoming trigger', () => {
     })
     const r = await tryAutoApproveHandover({ incomingSessionId: 'in-1' })
     expect(r.approved).toBe(false)
-    expect(r.reason).toMatch(/لا تطابق/)
+    // incoming holds w2, which the source does not cover
+    expect(r.reason).toMatch(/لا تغطّيها/)
   })
 })
 
 describe('tryAutoApproveHandover — outgoing trigger', () => {
   it('approves when triggered by outgoing after incoming has already checked in', async () => {
-    findUnique.mockResolvedValueOnce(baseOut)         // load outgoing
-    findFirst.mockResolvedValueOnce(baseIn)           // load matching incoming
+    findUnique.mockResolvedValueOnce(baseOut)         // load outgoing (the trigger)
+    findFirst
+      .mockResolvedValueOnce(baseIn)                  // loadIncomingByOutgoingUser
+      .mockResolvedValueOnce(baseOut)                 // loadPendingEndFor each source
     shiftFindFirst.mockResolvedValueOnce({ id: 'sh', userId: 'u-in' })
     updateMany.mockResolvedValue({ count: 1 })
     auditLogCreate.mockResolvedValue({})
