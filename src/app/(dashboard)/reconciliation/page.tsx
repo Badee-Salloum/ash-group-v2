@@ -116,7 +116,7 @@ export default function ReconciliationPage() {
           <div className="flex items-center gap-2 flex-wrap">
             {Object.entries(currencyTotals).map(([cur, total]) => (
               <div key={cur} className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
-                <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">محصل {cur}</p>
+                <p className="text-[11px] sm:text-xs text-blue-600 font-bold uppercase tracking-wider">محصل {cur}</p>
                 <p className="text-lg font-mono font-bold text-blue-700">
                   {total.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {cur}
                 </p>
@@ -141,6 +141,18 @@ export default function ReconciliationPage() {
         exportFilename="reconciliation"
         excelExportUrl={`/api/transactions/export?${new URLSearchParams(Object.entries(filters).filter(([,v]) => v)).toString()}`}
         emptyMessage="لا توجد عمليات تطابق الفلاتر المحددة"
+        emptyHint="جرّب توسيع نطاق البحث أو إزالة بعض الفلاتر."
+        emptyAction={
+          Object.values(filters).some(Boolean)
+            ? {
+                label: 'امسح الفلاتر',
+                onClick: () => setFilters({
+                  status: '', type: '', accountId: '', currency: '', dateFrom: '', dateTo: '',
+                  reviewed: '', reviewCategory: '',
+                }),
+              }
+            : undefined
+        }
       />
 
       {/* Edit Modal */}

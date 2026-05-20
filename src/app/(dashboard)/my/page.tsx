@@ -123,28 +123,28 @@ export default function MyDashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="card p-4">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] text-gray-400 font-bold uppercase">عمليات الأسبوع</p>
+            <p className="text-[11px] sm:text-xs text-gray-400 font-bold uppercase">عمليات الأسبوع</p>
             <TrendingUp size={14} className="text-blue-500" />
           </div>
           <p className="text-2xl font-bold text-gray-800 font-mono">{s.operationsThisWeek}</p>
         </div>
         <div className="card p-4">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] text-gray-400 font-bold uppercase">عمليات الشهر</p>
+            <p className="text-[11px] sm:text-xs text-gray-400 font-bold uppercase">عمليات الشهر</p>
             <TrendingUp size={14} className="text-emerald-500" />
           </div>
           <p className="text-2xl font-bold text-gray-800 font-mono">{s.operationsThisMonth}</p>
         </div>
         <div className="card p-4">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] text-rose-500 font-bold uppercase">أخطاء منسوبة</p>
+            <p className="text-[11px] sm:text-xs text-rose-500 font-bold uppercase">أخطاء منسوبة</p>
             <AlertTriangle size={14} className="text-rose-500" />
           </div>
           <p className="text-2xl font-bold text-rose-700 font-mono">{s.errorsTotal}</p>
         </div>
         <div className="card p-4">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] text-amber-500 font-bold uppercase">المكافأة التراكمية</p>
+            <p className="text-[11px] sm:text-xs text-amber-500 font-bold uppercase">المكافأة التراكمية</p>
             <Sparkles size={14} className="text-amber-500" />
           </div>
           <p className="text-2xl font-bold text-amber-700 font-mono">{fmtSYP(s.cumulativeBonus)}</p>
@@ -170,23 +170,23 @@ export default function MyDashboardPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
             <div>
-              <p className="text-[10px] text-gray-400 font-bold uppercase">الفترة</p>
+              <p className="text-[11px] sm:text-xs text-gray-400 font-bold uppercase">الفترة</p>
               <p className="font-mono text-xs">{fmtSyriaDate(lastPayroll.weekStart)}</p>
             </div>
             <div>
-              <p className="text-[10px] text-gray-400 font-bold uppercase">أساسي</p>
+              <p className="text-[11px] sm:text-xs text-gray-400 font-bold uppercase">أساسي</p>
               <p className="font-mono">{fmtSYP(lastPayroll.baseSalary)}</p>
             </div>
             <div>
-              <p className="text-[10px] text-emerald-500 font-bold uppercase">مكافأة</p>
+              <p className="text-[11px] sm:text-xs text-emerald-500 font-bold uppercase">مكافأة</p>
               <p className="font-mono text-emerald-700">+{fmtSYP(lastPayroll.bonusAmount)}</p>
             </div>
             <div>
-              <p className="text-[10px] text-amber-500 font-bold uppercase">سلفة</p>
+              <p className="text-[11px] sm:text-xs text-amber-500 font-bold uppercase">سلفة</p>
               <p className="font-mono text-amber-700">−{fmtSYP(lastPayroll.advanceAmount)}</p>
             </div>
             <div>
-              <p className="text-[10px] text-blue-500 font-bold uppercase">الصافي</p>
+              <p className="text-[11px] sm:text-xs text-blue-500 font-bold uppercase">الصافي</p>
               <p className="font-mono font-bold text-blue-700 text-lg">{fmtSYP(lastPayroll.netAmount)}</p>
             </div>
           </div>

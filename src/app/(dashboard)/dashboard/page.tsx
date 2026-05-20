@@ -92,7 +92,7 @@ export default function DashboardPage() {
                       {netPro >= 0 ? <ArrowUpRight size={18} className="text-emerald-500" /> : <ArrowDownRight size={18} className="text-red-500" />}
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">صافي الربح · {cur}</p>
+                      <p className="text-[11px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider">صافي الربح · {cur}</p>
                       <p className={`text-lg font-extrabold font-mono ${netPro >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {fmt(netPro)} <span className="text-xs font-normal text-gray-500">{cur}</span>
                       </p>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
             <p className={`text-2xl font-extrabold font-mono ${m.text}`}>
               {typeof m.value === 'number' ? m.value.toLocaleString('ar') : m.value}
             </p>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1.5">{m.label}</p>
+            <p className="text-[11px] sm:text-xs font-bold text-gray-400 uppercase tracking-wider mt-1.5">{m.label}</p>
           </div>
         ))}
       </div>

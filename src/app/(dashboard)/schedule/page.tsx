@@ -4,6 +4,7 @@ import { Save, Loader2, Sparkles, Trash2, X, Wallet, Check, Copy, ClipboardPaste
 import { weekStartStr, weekDays, addDays, dayOfWeek } from '@/lib/datetime'
 import { previousShift, previousShiftIsPriorDay } from '@/lib/shifts/shiftWindow'
 import { suggestHandover } from '@/lib/schedule/handoverSuggest'
+import { useToast } from '@/components/ui/Toast'
 
 type ShiftNum = 'ONE' | 'TWO' | 'THREE'
 
@@ -65,6 +66,7 @@ export default function SchedulePage() {
   const [handoverEditing, setHandoverEditing] = useState<Shift | null>(null)
   // Copy/paste clipboard — captures a cell, a whole day, or the whole week.
   const [clipboard, setClipboard] = useState<Clipboard>(null)
+  const toast = useToast()
 
   const days = weekDays(weekStart)
 
@@ -279,9 +281,11 @@ export default function SchedulePage() {
       const d = await r.json()
       if (!d.success) throw new Error(d.error)
       setMsg(`تم حفظ ${d.count} مناوبة`)
+      toast(`تم حفظ ${d.count} مناوبة`)
       load()
     } catch (e) {
       setMsg('خطأ: ' + (e instanceof Error ? e.message : String(e)))
+      toast('تعذّر حفظ الجدول', 'error')
     } finally {
       setSaving(false)
     }

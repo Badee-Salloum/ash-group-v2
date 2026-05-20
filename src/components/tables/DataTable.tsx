@@ -1,6 +1,7 @@
 'use client'
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { ChevronUp, ChevronDown, Download, Search, ChevronLeft, ChevronRight, Columns } from 'lucide-react'
+import { ChevronUp, ChevronDown, Download, Search, ChevronLeft, ChevronRight, Columns, SearchX } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 export interface Column<T> {
   key: string
@@ -23,6 +24,8 @@ interface DataTableProps<T> {
   pageSize?: number
   loading?: boolean
   emptyMessage?: string
+  emptyHint?: string
+  emptyAction?: { label: string; onClick: () => void }
 }
 
 export default function DataTable<T extends Record<string, unknown>>({
@@ -35,6 +38,8 @@ export default function DataTable<T extends Record<string, unknown>>({
   pageSize: defaultPageSize = 50,
   loading = false,
   emptyMessage = 'لا توجد بيانات',
+  emptyHint,
+  emptyAction,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
@@ -314,7 +319,16 @@ export default function DataTable<T extends Record<string, unknown>>({
                 </tr>
               ))
             ) : paginated.length === 0 ? (
-              <tr><td colSpan={visibleCols.length} className="text-center py-16 text-gray-400">{emptyMessage}</td></tr>
+              <tr>
+                <td colSpan={visibleCols.length} className="!block">
+                  <EmptyState
+                    icon={SearchX}
+                    title={emptyMessage}
+                    hint={emptyHint}
+                    action={emptyAction}
+                  />
+                </td>
+              </tr>
             ) : paginated.map((row, i) => (
               <tr key={i}>
                 {visibleCols.map(col => (
