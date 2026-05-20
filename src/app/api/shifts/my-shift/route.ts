@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { UserRole } from '@/lib/db/prisma-types'
 import { db } from '@/lib/db/client'
 import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
 import { checkinWindowUtc, type ShiftNumber } from '@/lib/shifts/shiftWindow'
@@ -11,8 +12,11 @@ import { checkinWindowUtc, type ShiftNumber } from '@/lib/shifts/shiftWindow'
 //  - a shift whose window is open  → checkinOpen: true
 //  - otherwise the next shift today whose window has not opened yet
 //    → checkinOpen: false, opensAt set so the card can say when it opens.
-// This way an employee who is scheduled always sees their shift instead of a
-// misleading "no shift" message just because they looked early.
+//
+// Diagnostics: ?debug=1 returns a _debug block with the full resolution.
+// ADMIN/MANAGER may add ?userId=<id> to inspect another user's resolution.
+
+export const dynamic = 'force-dynamic'
 
 const WINDOW_LABEL: Record<ShiftNumber, string> = {
   ONE: '06:00 → 14:00',
@@ -20,21 +24,26 @@ const WINDOW_LABEL: Record<ShiftNumber, string> = {
   THREE: '22:00 → 06:00',
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+
+  const params = req.nextUrl.searchParams
+  const debug = params.get('debug') === '1'
+  const overrideUserId = params.get('userId')
+  const isAdminTier = session.role === UserRole.ADMIN || session.role === UserRole.MANAGER
+  const targetUserId = overrideUserId && isAdminTier ? overrideUserId : session.userId
 
   const nowMs = Date.now()
   const today = damascusDateStr(new Date())
   const yesterday = addDays(today, -1)
+  const rangeGte = damascusDayStartUtc(yesterday)
+  const rangeLt = damascusDayStartUtc(addDays(today, 1))
   const candidates = await db.shift.findMany({
     where: {
-      userId: session.userId,
+      userId: targetUserId,
       isDayOff: false,
-      date: {
-        gte: damascusDayStartUtc(yesterday),
-        lt: damascusDayStartUtc(addDays(today, 1)),
-      },
+      date: { gte: rangeGte, lt: rangeLt },
     },
   })
 
@@ -57,8 +66,38 @@ export async function GET() {
   }
 
   const picked = openShift ?? upcoming?.shift ?? null
+
+  const debugInfo = debug
+    ? {
+        serverNow: new Date(nowMs).toISOString(),
+        today,
+        yesterday,
+        rangeGte: rangeGte.toISOString(),
+        rangeLt: rangeLt.toISOString(),
+        targetUserId,
+        sessionUserId: session.userId,
+        candidateCount: candidates.length,
+        candidates: candidates.map((c: Candidate) => {
+          const dayKey = damascusDateStr(c.date)
+          const w = checkinWindowUtc(dayKey, c.shiftNumber as ShiftNumber)
+          return {
+            id: c.id,
+            date: c.date,
+            shiftNumber: c.shiftNumber,
+            isDayOff: c.isDayOff,
+            dayKey,
+            openFrom: w.openFrom.toISOString(),
+            end: w.end.toISOString(),
+            isOpen: nowMs >= w.openFrom.getTime() && nowMs <= w.end.getTime(),
+          }
+        }),
+        pickedId: picked?.id ?? null,
+        openShiftFound: openShift !== null,
+      }
+    : undefined
+
   if (!picked) {
-    return NextResponse.json({ success: true, scheduled: null })
+    return NextResponse.json({ success: true, scheduled: null, ...(debug ? { _debug: debugInfo } : {}) })
   }
 
   const handoverNames = picked.handoverFromUserIds.length > 0
@@ -77,5 +116,6 @@ export async function GET() {
       checkinOpen: openShift !== null,
       opensAt: openShift ? null : new Date(upcoming!.openFromMs).toISOString(),
     },
+    ...(debug ? { _debug: debugInfo } : {}),
   })
 }
