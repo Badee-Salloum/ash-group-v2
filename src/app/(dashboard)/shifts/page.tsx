@@ -194,7 +194,7 @@ export default function ShiftsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">المناوبات</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">المناوبات</h1>
         <p className="text-sm text-gray-500 mt-0.5">
           {isEmployee ? 'تسجيل دخولك وخروجك' : 'تسجيل الدخول والخروج وتسليم الجلسات'}
         </p>
@@ -207,7 +207,7 @@ export default function ShiftsPage() {
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <p className="text-xs text-gray-400 uppercase font-bold mb-1">جلستي الحالية</p>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                   {STATUS_LABEL[myOpen.status].label}
                   {myOpen.shiftNumber && (
                     <span className="text-sm font-normal text-gray-500"> — {SHIFT_LABEL[myOpen.shiftNumber]}</span>
@@ -243,7 +243,7 @@ export default function ShiftsPage() {
                 </p>
                 {myShift ? (
                   <>
-                    <p className="text-lg font-bold text-gray-900">
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                       شيفت {myShift.shiftNumber === 'ONE' ? 'أول' : myShift.shiftNumber === 'TWO' ? 'ثاني' : 'ثالث'}
                       <span className="text-sm font-normal text-gray-500"> — {myShift.windowLabel}</span>
                     </p>
@@ -279,7 +279,7 @@ export default function ShiftsPage() {
       {/* ── EMPLOYEE: own recent sessions ── */}
       {isEmployee && myRecent.length > 0 && (
         <div className="card p-4">
-          <h2 className="font-bold text-gray-800 mb-3">جلساتي السابقة</h2>
+          <h2 className="font-bold text-gray-800 dark:text-gray-200 mb-3">جلساتي السابقة</h2>
           <div className="space-y-2">
             {myRecent.map(s => (
               <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
@@ -305,7 +305,7 @@ export default function ShiftsPage() {
           {pendingApprovals.length > 0 && (
             <div className="card p-4">
               <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                <h2 className="font-bold text-gray-800 flex items-center gap-2">
+                <h2 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
                   <ArrowRightLeft size={16} className="text-blue-500" />
                   موافقات تبديل المناوبات المعلقة ({pendingApprovals.length})
                 </h2>
@@ -372,7 +372,7 @@ export default function ShiftsPage() {
               const pendingEndCount = allActive.filter(s => s.status === 'PENDING_END').length
               return (
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                  <h2 className="font-bold text-gray-800">الجلسات النشطة ({allActive.length})</h2>
+                  <h2 className="font-bold text-gray-800 dark:text-gray-200">الجلسات النشطة ({allActive.length})</h2>
                   {isAdminTier && pendingEndCount > 1 && (
                     <button
                       onClick={() => handleBulk('forceComplete',
@@ -441,7 +441,7 @@ export default function ShiftsPage() {
           {/* Recently closed */}
           {recent.length > 0 && (
             <div className="card p-4">
-              <h2 className="font-bold text-gray-800 mb-3">جلسات مغلقة حديثاً ({recent.length})</h2>
+              <h2 className="font-bold text-gray-800 dark:text-gray-200 mb-3">جلسات مغلقة حديثاً ({recent.length})</h2>
               <div className="space-y-2">
                 {recent.map(s => (
                   <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
