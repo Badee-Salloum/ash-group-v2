@@ -272,3 +272,22 @@
   .btn-sm { min-height: 34px; }
   .btn-ghost { min-height: 34px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Dark mode — lift hardcoded dark-gray text on dark surfaces.
+   Many headings/values across pages use text-gray-900/800 with no dark:
+   variant; on the dark card/page surface they render near-invisible. These
+   rules are scoped to .card / .metric-card / .glass-card (always a dark
+   surface in dark mode) so modal panels — which stay light — keep their
+   own dark text. Unlayered, so they win over the Tailwind utilities.
+   ════════════════════════════════════════════════════════════════════════ */
+.dark .card .text-gray-900,
+.dark .card .text-gray-800,
+.dark .metric-card .text-gray-900,
+.dark .metric-card .text-gray-800,
+.dark .glass-card .text-gray-900,
+.dark .glass-card .text-gray-800 { color: #e5e7eb; }
+.dark .card h1, .dark .card h2, .dark .card h3 { color: #f1f5f9; }
+/* Page titles sit on the dark page background, not inside a card. */
+.dark h1 { color: #f1f5f9; }
+
