@@ -5,6 +5,7 @@ import { DashboardModal } from './_components/DashboardModal'
 import { Tx, AccountSummary, Stats, MetricAction, CategoryKind } from './_components/types'
 import { loadCategoryTransactions, loadMetricTransactions, METRIC_TITLES } from './_components/detailsLoader'
 import { FollowUpStatsWidget } from '../follow-ups/_components/FollowUpStatsWidget'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 function fmt(n: number) { return n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
@@ -239,7 +240,6 @@ export default function DashboardPage() {
         <div className="card-header">
           <div>
             <h2 className="font-bold text-gray-800 dark:text-gray-200">ملخص الحسابات</h2>
-            <p className="text-[11px] text-gray-400 mt-0.5">Accounts Summary</p>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -257,7 +257,7 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {!stats?.accountSummaries?.length ? (
-                <tr><td colSpan={restricted ? 3 : 7} className="text-center py-12 text-gray-300">لا توجد حسابات</td></tr>
+                <tr><td colSpan={restricted ? 3 : 7} className="!block"><EmptyState title="لا توجد حسابات" hint="ستظهر الحسابات هنا بعد إضافتها وربط محافظها." /></td></tr>
               ) : (
                 <>
                   {(() => {
@@ -342,7 +342,6 @@ export default function DashboardPage() {
         <div className="card-header">
           <div>
             <h2 className="font-bold text-gray-800 dark:text-gray-200">آخر عمليات الرفع</h2>
-            <p className="text-[11px] text-gray-400 mt-0.5">Recent Uploads</p>
           </div>
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-50 text-amber-600">
             <Zap size={12} />
@@ -356,7 +355,7 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {!stats?.recentBatches?.length ? (
-                <tr><td colSpan={4} className="text-center py-12 text-gray-300">لا توجد عمليات رفع بعد</td></tr>
+                <tr><td colSpan={4} className="!block"><EmptyState title="لا توجد عمليات رفع بعد" hint="ارفع ملف عمليات من صفحة الرفع لتظهر هنا." /></td></tr>
               ) : stats.recentBatches.map(b => (
                 <tr key={b.id}>
                   <td className="font-semibold text-gray-700 dark:text-gray-300">{b.accountName}</td>
