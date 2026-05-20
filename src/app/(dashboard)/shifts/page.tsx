@@ -117,6 +117,8 @@ export default function ShiftsPage() {
       load()
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e))
+      // Re-sync the card — its check-in window may have closed since load.
+      load()
     } finally {
       setSubmitting(false)
     }

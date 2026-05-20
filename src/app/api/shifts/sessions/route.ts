@@ -3,7 +3,7 @@ import { getSession, requireRole, audit } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { UserRole } from '@/lib/db/prisma-types'
 import { tryAutoApproveHandover } from '@/lib/shifts/autoApprove'
-import { damascusDateStr, damascusDayStartUtc, addDays } from '@/lib/datetime'
+import { damascusDateStr, damascusDayStartUtc, addDays, fmtSyria } from '@/lib/datetime'
 import { checkinWindowUtc, type ShiftNumber } from '@/lib/shifts/shiftWindow'
 import { z } from 'zod'
 
@@ -165,15 +165,34 @@ export async function POST(req: NextRequest) {
       include: { wallets: { select: { accountId: true } } },
     })
     let scheduled: (typeof candidates)[number] | null = null
+    let nextOpenMs: number | null = null
     for (const c of candidates) {
       const dayKey = damascusDateStr(c.date)
       const w = checkinWindowUtc(dayKey, c.shiftNumber as ShiftNumber)
-      if (nowMs >= w.openFrom.getTime() && nowMs <= w.end.getTime()) {
+      const openFromMs = w.openFrom.getTime()
+      if (nowMs >= openFromMs && nowMs <= w.end.getTime()) {
         scheduled = c
         break
       }
+      if (openFromMs > nowMs && (nextOpenMs === null || openFromMs < nextOpenMs)) {
+        nextOpenMs = openFromMs
+      }
     }
     if (!scheduled) {
+      // Distinguish "no shift at all" from "scheduled, but the check-in window
+      // isn't open yet" — the latter must not read as "not scheduled".
+      if (nextOpenMs !== null) {
+        return NextResponse.json(
+          { error: `تسجيل الدخول لمناوبتك يفتح الساعة ${fmtSyria(new Date(nextOpenMs), false).slice(11)}.` },
+          { status: 403 },
+        )
+      }
+      if (candidates.length > 0) {
+        return NextResponse.json(
+          { error: 'انتهت نافذة تسجيل الدخول لمناوبتك. تواصل مع المشرف.' },
+          { status: 403 },
+        )
+      }
       return NextResponse.json(
         { error: 'لست مجدولاً لمناوبة في هذا الوقت. تواصل مع المشرف.' },
         { status: 403 },

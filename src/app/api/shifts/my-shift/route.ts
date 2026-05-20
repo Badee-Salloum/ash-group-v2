@@ -33,7 +33,7 @@ export async function GET() {
       isDayOff: false,
       date: {
         gte: damascusDayStartUtc(yesterday),
-        lt: damascusDayStartUtc(addDays(today, 2)),
+        lt: damascusDayStartUtc(addDays(today, 1)),
       },
     },
   })
