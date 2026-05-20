@@ -122,7 +122,7 @@ export function EditModal({ tx, onClose, onSaved }: { tx: Transaction; onClose: 
               onChange={e => setForm({ ...form, amount: e.target.value })} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* SC TX ID */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">رقم شام كاش</label>

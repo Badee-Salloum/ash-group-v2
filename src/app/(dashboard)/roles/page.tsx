@@ -126,7 +126,7 @@ export default function RolesPage() {
           <h1 className="text-xl font-bold text-gray-900">الأدوار والصلاحيات</h1>
           <p className="text-sm text-gray-500 mt-0.5">إدارة الأدوار المخصّصة وتحديد صلاحيات كل دور</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setGuideOpen(g => !g)} className="btn-secondary btn-sm" title="دليل الاستخدام">
             <HelpCircle size={14} /> دليل
           </button>
@@ -316,7 +316,7 @@ export default function RolesPage() {
               <button onClick={() => setShowForm(false)} className="btn-ghost p-1.5"><X size={18} /></button>
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">المعرّف *</label>
                   <input className="input font-mono" required value={form.name}

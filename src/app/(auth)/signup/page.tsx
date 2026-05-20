@@ -59,8 +59,8 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4 sm:p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 sm:p-8 text-center">
           <div className="mx-auto w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-5">
             <CheckCircle2 size={36} className="text-green-600" />
           </div>
@@ -87,7 +87,7 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 sm:p-8">
         <div className="text-center mb-8">
           <div className="mx-auto w-14 h-14 bg-gradient-to-br from-[#0a2540] to-[#0c3d6e] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-[#0a2540]/20">
             <UserPlus size={26} className="text-white" />

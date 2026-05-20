@@ -343,7 +343,7 @@ export default function PayrollPage() {
       {/* Group bonus modal */}
       {showGroup && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold flex items-center gap-2"><Gift size={18} /> مكافأة جماعية</h2>
               <button onClick={() => setShowGroup(false)} className="btn-ghost p-1.5"><X size={18} /></button>

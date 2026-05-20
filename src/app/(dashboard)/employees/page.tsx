@@ -258,7 +258,7 @@ export default function EmployeesPage() {
           <h1 className="text-xl font-bold text-gray-900">إدارة الموظفين</h1>
           <p className="text-sm text-gray-500 mt-0.5">قائمة وإدارة موظفي الشركة</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link href="/employees/tree" className="btn-secondary">
             <GitBranch size={16} /> الهيكل التنظيمي
           </Link>
@@ -307,7 +307,7 @@ export default function EmployeesPage() {
                   email/password inputs. */}
               <input type="text" name="prevent-autofill" autoComplete="off" style={{ display: 'none' }} />
               <input type="password" name="prevent-autofill-pw" autoComplete="new-password" style={{ display: 'none' }} />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">الاسم *</label>
                   <input className="input" required value={form.name}
@@ -483,7 +483,7 @@ function ResetPasswordModal({ employee, onClose }: { employee: Employee; onClose
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-bold text-gray-800 flex items-center gap-2">
             <Key size={18} className="text-amber-600" /> إعادة تعيين كلمة المرور

@@ -207,7 +207,7 @@ export default function ConsolidationLogPage() {
             Consolidation Log — العمليات التي تم دمجها وحذفها تلقائياً كأزواج (إيداع+سحب)
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {data.length > 0 && (
             <button
               onClick={deleteAllShown}

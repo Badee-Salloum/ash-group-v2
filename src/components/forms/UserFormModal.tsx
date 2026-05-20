@@ -175,7 +175,7 @@ export default function UserFormModal({ open, mode, editing, roleOptions, manage
               on the email/password inputs and pastes the saved login. */}
           <input type="text" name="prevent-autofill" autoComplete="off" style={{ display: 'none' }} />
           <input type="password" name="prevent-autofill-pw" autoComplete="new-password" style={{ display: 'none' }} />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">الاسم *</label>
               <input className="input" required value={form.name}

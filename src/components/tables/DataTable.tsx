@@ -318,7 +318,14 @@ export default function DataTable<T extends Record<string, unknown>>({
             ) : paginated.map((row, i) => (
               <tr key={i}>
                 {visibleCols.map(col => (
-                  <td key={col.key}>{col.render ? col.render(row) : String(row[col.key] ?? '')}</td>
+                  <td
+                    key={col.key}
+                    /* data-label drives the per-cell field label the mobile
+                       reflow CSS shows (globals.css < 640px media query). */
+                    data-label={typeof col.header === 'string' ? col.header : ''}
+                  >
+                    {col.render ? col.render(row) : String(row[col.key] ?? '')}
+                  </td>
                 ))}
               </tr>
             ))}

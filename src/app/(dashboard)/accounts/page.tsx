@@ -157,7 +157,7 @@ export default function AccountsPage() {
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
               </div>
               {/* العملة تُحدّد تلقائياً من الملفات المرفوعة */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">نسبة ربح الإيداع % *</label>
                   <input type="number" step="0.01" min="0" max="100" className="input"

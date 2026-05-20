@@ -140,6 +140,8 @@ export default function AttendancePage() {
           لا يوجد موظفون
         </div>
       ) : (
+        <>
+        <p className="sm:hidden text-[11px] text-gray-400 text-center">← اسحب أفقياً لعرض بقية الأيام →</p>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead>
@@ -294,6 +296,7 @@ export default function AttendancePage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <div className="flex items-center gap-4 text-[11px] text-gray-500 flex-wrap">

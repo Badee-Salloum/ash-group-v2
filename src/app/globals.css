@@ -219,3 +219,49 @@
     opacity: 0.08;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Mobile (< 640px) — reflow data tables into stacked cards + bigger taps.
+   Wrapped in a max-width media query so the desktop layout is untouched.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 639px) {
+  /* Each .data-table row becomes a self-contained card; the column header
+     is surfaced per-cell via the data-label attribute (set in DataTable). */
+  .data-table thead { display: none; }
+  .data-table,
+  .data-table tbody,
+  .data-table tbody tr,
+  .data-table tbody td { display: block; width: 100%; }
+  .data-table tbody tr {
+    margin-bottom: 0.6rem;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    padding: 0.15rem 0.5rem;
+  }
+  :is(.dark .data-table) tbody tr { border-color: rgba(255, 255, 255, 0.1); }
+  .data-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0.25rem;
+    white-space: normal;
+    font-size: 0.8125rem;
+  }
+  .data-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6b7280;
+    flex-shrink: 0;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  /* Action / icon columns have no header — drop the empty label. */
+  .data-table tbody td[data-label='']::before { content: none; }
+  .data-table tbody td[data-label='']  { justify-content: flex-end; }
+
+  /* Bigger tap targets for icon-only buttons on touch screens. */
+  .btn-sm { min-height: 34px; }
+  .btn-ghost { min-height: 34px; }
+}

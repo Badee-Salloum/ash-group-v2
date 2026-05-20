@@ -298,7 +298,7 @@ export default function SchedulePage() {
           <h1 className="text-xl font-bold text-gray-900">جدول المناوبات</h1>
           <p className="text-sm text-gray-500 mt-0.5 font-mono">أسبوع {days[0]} ← {days[6]}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => changeWeek(-1)} className="btn-secondary btn-sm">← الأسبوع السابق</button>
           <button onClick={() => setWeekStart(weekStartStr(new Date()))} className="btn-secondary btn-sm">الأسبوع الحالي</button>
           <button onClick={() => changeWeek(1)} className="btn-secondary btn-sm">الأسبوع التالي →</button>
@@ -355,6 +355,8 @@ export default function SchedulePage() {
           جاري التحميل...
         </div>
       ) : (
+        <>
+        <p className="sm:hidden text-[11px] text-gray-400 text-center">← اسحب أفقياً لعرض بقية الأيام →</p>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -381,7 +383,7 @@ export default function SchedulePage() {
             <tbody>
               {(['ONE', 'TWO', 'THREE'] as const).map(sn => (
                 <tr key={sn} className="border-b border-gray-100">
-                  <td className={`px-3 py-3 align-top ${SHIFT_LABEL[sn].cls} border-r-4`}>
+                  <td className={`px-3 py-3 align-top ${SHIFT_LABEL[sn].cls} border-r-4 sticky right-0 z-10`}>
                     <div className="text-sm font-bold text-gray-700">شيفت {SHIFT_AR[sn]}</div>
                     <div className="text-[10px] text-gray-500 font-mono">{SHIFT_LABEL[sn].label}</div>
                   </td>
@@ -491,6 +493,7 @@ export default function SchedulePage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {walletEditing && (
