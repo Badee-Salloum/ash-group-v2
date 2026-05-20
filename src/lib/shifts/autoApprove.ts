@@ -45,6 +45,7 @@ interface SessionWithWallets {
   handoverFromUserIds: string[]
   notes: string | null
   startAt: Date
+  endAt: Date | null
   wallets: { accountId: string }[]
 }
 
@@ -65,9 +66,11 @@ async function loadIncomingByOutgoingUser(outgoingUserId: string): Promise<Sessi
   })
 }
 
-async function loadPendingEndFor(userId: string): Promise<SessionWithWallets | null> {
+// The user's most recent session (any status) — the handover-source loop
+// branches on its status (PENDING_END / COMPLETED / else).
+async function loadLatestSessionFor(userId: string): Promise<SessionWithWallets | null> {
   return db.shiftSession.findFirst({
-    where: { status: 'PENDING_END', userId },
+    where: { userId },
     include: { wallets: true },
     orderBy: { startAt: 'desc' },
   })
@@ -108,19 +111,34 @@ export async function tryAutoApproveHandover(
     return { approved: false, reason: 'رقم المناوبة غير محدد — يلزم موافقة يدوية' }
   }
 
-  // ── Every source must have a PENDING_END session waiting. ──
-  const outgoings: SessionWithWallets[] = []
+  // ── Resolve each handover source's current session. ──
+  //   PENDING_END        → a real outgoing to flip → COMPLETED.
+  //   COMPLETED (recent) → already handed over this cycle (e.g. a source
+  //                        shared with another taker whose handover ran
+  //                        first) → counts for wallet coverage, not flipped.
+  //   anything else      → the colleague hasn't handed over yet → block.
+  const HANDOVER_RECENT_MS = 12 * 60 * 60 * 1000
+  const outgoings: SessionWithWallets[] = []        // PENDING_END → will flip
+  const coverageSources: SessionWithWallets[] = []  // contribute wallet coverage
   for (const srcId of sources) {
-    const o = await loadPendingEndFor(srcId)
-    if (!o) {
+    const latest = await loadLatestSessionFor(srcId)
+    if (latest?.status === 'PENDING_END') {
+      outgoings.push(latest)
+      coverageSources.push(latest)
+    } else if (
+      latest?.status === 'COMPLETED' &&
+      latest.endAt != null &&
+      Date.now() - latest.endAt.getTime() < HANDOVER_RECENT_MS
+    ) {
+      coverageSources.push(latest)
+    } else {
       return { approved: false, reason: 'في انتظار تسجيل خروج جميع موظفي الشيفت السابق' }
     }
-    outgoings.push(o)
   }
 
   // ── Wallet coverage: incoming wallets ⊆ union of all sources' wallets. ──
   const union = new Set<string>()
-  for (const o of outgoings) {
+  for (const o of coverageSources) {
     for (const w of o.wallets) union.add(w.accountId)
   }
   for (const w of incoming.wallets) {
