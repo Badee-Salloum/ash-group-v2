@@ -4,6 +4,7 @@ import { fmtSyria } from '@/lib/datetime'
 import { Check, X, ArrowRightLeft, Loader2, LogIn, LogOut, Pencil, StopCircle, CalendarClock } from 'lucide-react'
 import SessionEditModal, { type SessionLite } from '@/components/forms/SessionEditModal'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 interface Account { id: string; name: string; currency: string }
@@ -56,6 +57,7 @@ export default function ShiftsPage() {
   const [msg, setMsg] = useState('')
   const [bulkBusy, setBulkBusy] = useState<'approve' | 'reject' | 'forceComplete' | null>(null)
   const toast = useToast()
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -128,10 +130,10 @@ export default function ShiftsPage() {
     sessionId: string,
     action: 'requestEnd' | 'approveHandover' | 'cancel' | 'forceComplete',
   ) {
-    if (action === 'cancel' && !confirm('إلغاء الجلسة؟ ستظهر كـ "ملغاة" في السجلات.')) return
-    if (action === 'forceComplete' && !confirm(
+    if (action === 'cancel' && !(await confirm('إلغاء الجلسة؟ ستظهر كـ "ملغاة" في السجلات.'))) return
+    if (action === 'forceComplete' && !(await confirm(
       'إنهاء الجلسة يدوياً وتعليمها كمكتملة؟\n\nيُستخدم عند تجاوز انتظار التسليم — مثلاً عندما لا يصل الموظف التالي.',
-    )) return
+    ))) return
     try {
       const res = await fetch('/api/shifts/sessions', {
         method: 'PATCH',
@@ -160,7 +162,7 @@ export default function ShiftsPage() {
     busyKey: 'approve' | 'reject' | 'forceComplete',
   ) {
     if (targets.length === 0) return
-    if (!confirm(confirmMsg)) return
+    if (!(await confirm(confirmMsg))) return
     setBulkBusy(busyKey)
     let ok = 0
     const failures: string[] = []

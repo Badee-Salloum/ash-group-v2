@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { Loader2, RefreshCw, DollarSign, Sparkles, Gift, X, Save, ChevronRight, ChevronLeft } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { fmtSyriaDate } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
 
@@ -145,8 +146,10 @@ export default function PayrollPage() {
     }
   }
 
+  const confirm = useConfirm()
+
   async function markPaid(id: string) {
-    if (!confirm('تأكيد دفع هذا الراتب؟')) return
+    if (!(await confirm('تأكيد دفع هذا الراتب؟'))) return
     const r = await fetch('/api/payroll', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

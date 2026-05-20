@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import DataTable, { Column } from '@/components/tables/DataTable'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { fmtSyriaDate } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
 
@@ -75,8 +76,10 @@ export default function ExpensesPage() {
     finally { setSaving(false) }
   }
 
+  const confirm = useConfirm()
+
   async function handleDelete(id: string) {
-    if (!confirm('هل تريد حذف هذه الصرفية؟')) return
+    if (!(await confirm('هل تريد حذف هذه الصرفية؟'))) return
     await fetch('/api/expenses', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { Loader2, Sparkles, Gift, X, Save, RefreshCw, AlertTriangle, TrendingUp, Award, Trophy, Trash2, Lock, ChevronDown } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { fmtSyriaDate, fmtSyria } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
 
@@ -98,12 +99,14 @@ export default function BonusesDashboardPage() {
     } finally { setSaving(false) }
   }
 
+  const confirm = useConfirm()
+
   async function deleteBonus(b: RecentBonus) {
     if (b.isPaid) {
       alert('لا يمكن حذف مكافأة تم دفع راتب أسبوعها بالفعل.')
       return
     }
-    if (!confirm(`حذف المكافأة (${b.type === 'GROUP' ? 'جماعية' : 'فردية'}) لـ ${b.user.name}؟`)) return
+    if (!(await confirm(`حذف المكافأة (${b.type === 'GROUP' ? 'جماعية' : 'فردية'}) لـ ${b.user.name}؟`))) return
     try {
       const res = await fetch(`/api/bonuses?id=${b.id}`, { method: 'DELETE' })
       const d = await res.json()
@@ -120,7 +123,7 @@ export default function BonusesDashboardPage() {
       alert('لا يمكن حذف مكافأة تم دفع راتب أسبوعها بالفعل.')
       return
     }
-    if (!confirm(`حذف هذه المكافأة (${b.type === 'GROUP' ? 'جماعية' : 'فردية'} ${b.amount.toLocaleString('en')} ل.س) من ${employeeName}؟`)) return
+    if (!(await confirm(`حذف هذه المكافأة (${b.type === 'GROUP' ? 'جماعية' : 'فردية'} ${b.amount.toLocaleString('en')} ل.س) من ${employeeName}؟`))) return
     try {
       const res = await fetch(`/api/bonuses?id=${b.id}`, { method: 'DELETE' })
       const d = await res.json()

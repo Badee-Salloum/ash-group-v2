@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import DataTable, { Column } from '@/components/tables/DataTable'
 import { fmtSyria } from '@/lib/datetime'
 import { Trash2 } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface ConsolidationEntry extends Record<string, unknown> {
   id: string
@@ -57,8 +58,10 @@ export default function ConsolidationLogPage() {
     })
   }, [])
 
+  const confirm = useConfirm()
+
   async function deleteOne(id: string) {
-    if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return
+    if (!(await confirm('هل أنت متأكد من حذف هذا السجل؟'))) return
     try {
       const res = await fetch('/api/consolidation-log', {
         method: 'DELETE',
@@ -75,8 +78,8 @@ export default function ConsolidationLogPage() {
 
   async function deleteAllShown() {
     if (data.length === 0) return
-    if (!confirm(`⚠️ سيتم حذف ${data.length} سجل من سجل الدمج. لا يمكن التراجع. هل أنت متأكد؟`)) return
-    if (!confirm('تأكيد نهائي: حذف جميع السجلات المعروضة؟')) return
+    if (!(await confirm(`سيتم حذف ${data.length} سجل من سجل الدمج. لا يمكن التراجع. هل أنت متأكد؟`))) return
+    if (!(await confirm('تأكيد نهائي: حذف جميع السجلات المعروضة؟'))) return
     try {
       const res = await fetch('/api/consolidation-log', {
         method: 'DELETE',

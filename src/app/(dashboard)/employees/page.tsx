@@ -5,6 +5,7 @@ import DataTable, { Column } from '@/components/tables/DataTable'
 import { fmtSyriaDate } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
 import { UserPlus, Edit2, Trash2, GitBranch, X, Save, Loader2, User as UserIcon, Key, Copy, Check } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface Employee extends Record<string, unknown> {
   id: string
@@ -153,8 +154,10 @@ export default function EmployeesPage() {
     }
   }
 
+  const confirm = useConfirm()
+
   async function handleDelete(emp: Employee) {
-    if (!confirm(`هل أنت متأكد من تعطيل الموظف "${emp.name}"؟`)) return
+    if (!(await confirm(`هل أنت متأكد من تعطيل الموظف "${emp.name}"؟`))) return
     try {
       const res = await fetch(`/api/employees?id=${emp.id}`, { method: 'DELETE' })
       const d = await res.json()

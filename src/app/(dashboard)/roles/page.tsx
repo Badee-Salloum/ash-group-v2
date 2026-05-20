@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { Loader2, Shield, ShieldCheck, ShieldAlert, Plus, X, Save, Trash2, Edit2, HelpCircle, ChevronDown } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { PERMISSION_CATEGORIES } from '@/lib/permissions/keys'
 
 interface RoleDTO {
@@ -89,9 +90,11 @@ export default function RolesPage() {
     } finally { setSaving(false) }
   }
 
+  const confirm = useConfirm()
+
   async function handleDelete(role: RoleDTO) {
     if (role.isLegacy) return
-    if (!confirm(`حذف الدور "${role.displayName}"؟ سيُسحب من ${role.assignedCount || 0} موظف.`)) return
+    if (!(await confirm(`حذف الدور "${role.displayName}"؟ سيُسحب من ${role.assignedCount || 0} موظف.`))) return
     const res = await fetch(`/api/roles?id=${role.id}`, { method: 'DELETE' })
     const d = await res.json()
     if (!d.success) { alert('خطأ: ' + d.error); return }

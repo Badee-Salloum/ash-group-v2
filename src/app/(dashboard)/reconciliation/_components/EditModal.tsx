@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { X, Loader2, Save, Trash2 } from 'lucide-react'
 import { fmtSyria } from '@/lib/datetime'
 import { Transaction, TxStatus, REVIEW_LABELS, STATUS_LABELS, TYPE_LABELS } from './types'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface EditData {
   id: string
@@ -74,8 +75,10 @@ export function EditModal({ tx, onClose, onSaved }: { tx: Transaction; onClose: 
     }
   }
 
+  const confirm = useConfirm()
+
   async function handleDelete() {
-    if (!confirm('هل أنت متأكد من حذف هذه العملية؟')) return
+    if (!(await confirm('هل أنت متأكد من حذف هذه العملية؟'))) return
     setSaving(true)
     try {
       const res = await fetch(`/api/transactions?id=${tx.id}`, { method: 'DELETE' })

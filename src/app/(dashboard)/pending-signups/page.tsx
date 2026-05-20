@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { fmtSyriaDate } from '@/lib/datetime'
 import { UserCheck, X, Loader2, Inbox, CheckCircle2 } from 'lucide-react'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface PendingUser {
   id: string
@@ -72,8 +73,10 @@ export default function PendingSignupsPage() {
     }
   }
 
+  const confirm = useConfirm()
+
   async function handleReject(id: string, name: string) {
-    if (!confirm(`هل تريد رفض طلب التسجيل من "${name}" وحذف الحساب؟`)) return
+    if (!(await confirm(`هل تريد رفض طلب التسجيل من "${name}" وحذف الحساب؟`))) return
     setBusyId(id)
     setError('')
     try {

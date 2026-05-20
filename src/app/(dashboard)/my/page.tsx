@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { fmtSyria, fmtSyriaDate } from '@/lib/datetime'
 import { fmtSYP } from '@/lib/currency'
-import { Loader2, LogIn, LogOut, Clock, AlertTriangle, TrendingUp, Sparkles, Award, Calendar, Activity } from 'lucide-react'
+import { LogIn, LogOut, Clock, AlertTriangle, TrendingUp, Sparkles, Award, Calendar, Activity } from 'lucide-react'
 import { FollowUpStatsWidget } from '../follow-ups/_components/FollowUpStatsWidget'
 
 const ACTION_LABEL: Record<string, string> = {
@@ -46,8 +46,30 @@ export default function MyDashboardPage() {
   }, [])
 
   if (loading) return (
-    <div className="flex items-center justify-center p-20 text-gray-400 gap-2">
-      <Loader2 size={20} className="animate-spin" /> جاري التحميل...
+    <div className="space-y-5">
+      <div className="card p-5 flex items-center gap-4">
+        <div className="skeleton w-14 h-14 rounded-full" />
+        <div className="flex-1 space-y-2">
+          <div className="skeleton h-5 w-44 rounded-lg" />
+          <div className="skeleton h-3 w-28 rounded-lg" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="card p-4 space-y-2">
+            <div className="skeleton h-3 w-20 rounded-lg" />
+            <div className="skeleton h-7 w-16 rounded-lg" />
+          </div>
+        ))}
+      </div>
+      <div className="card p-5 space-y-3">
+        <div className="skeleton h-4 w-40 rounded-lg" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="skeleton h-12 rounded-lg" />
+          ))}
+        </div>
+      </div>
     </div>
   )
 
