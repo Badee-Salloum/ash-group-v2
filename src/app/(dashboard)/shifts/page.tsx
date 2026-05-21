@@ -155,7 +155,10 @@ export default function ShiftsPage() {
         cancel: 'تم إلغاء الجلسة',
         forceComplete: 'تم إنهاء الجلسة',
       }
-      toast(ACTION_DONE[action])
+      // requestEnd with no scheduled successor closes the shift immediately.
+      toast(action === 'requestEnd' && d.completed
+        ? 'تم تسجيل الخروج واكتملت المناوبة'
+        : ACTION_DONE[action])
       load()
     } catch (e) {
       toast('خطأ: ' + (e instanceof Error ? e.message : String(e)), 'error')

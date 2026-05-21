@@ -304,6 +304,40 @@ export async function PATCH(req: NextRequest) {
       if (target.status !== 'ACTIVE') {
         return NextResponse.json({ error: 'الجلسة ليست نشطة' }, { status: 400 })
       }
+
+      // Is anyone scheduled to take over from this employee? Look for a
+      // non-day-off Shift in the next-shift window that lists them as a
+      // handover source. (Shift.date is a @db.Date column → dateColumnUtc.)
+      const today = damascusDateStr(new Date())
+      const successor = await db.shift.findFirst({
+        where: {
+          handoverFromUserIds: { has: target.userId },
+          isDayOff: false,
+          date: { gte: dateColumnUtc(today), lt: dateColumnUtc(addDays(today, 2)) },
+        },
+        select: { id: true },
+      })
+
+      // No successor scheduled → nothing to hand over → close the shift now
+      // instead of stranding it in PENDING_END «بانتظار وصول الموظف التالي».
+      if (!successor) {
+        const now = new Date()
+        const duration = Math.round((now.getTime() - target.startAt.getTime()) / 60000)
+        await db.shiftSession.update({
+          where: { id: sessionId },
+          data: {
+            status: 'COMPLETED',
+            endAt: now,
+            durationMinutes: duration,
+            notes: target.notes
+              ? `${target.notes} · إغلاق تلقائي — لا يوجد تسليم تالٍ`
+              : 'إغلاق تلقائي — لا يوجد تسليم تالٍ مجدول',
+          },
+        })
+        await audit(session.userId, 'REQUEST_END_SHIFT', 'ShiftSession', sessionId, { autoCompleted: true })
+        return NextResponse.json({ success: true, autoApproved: false, completed: true })
+      }
+
       await db.shiftSession.update({
         where: { id: sessionId },
         data: { status: 'PENDING_END' },
