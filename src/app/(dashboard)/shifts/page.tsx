@@ -130,6 +130,13 @@ export default function ShiftsPage() {
     sessionId: string,
     action: 'requestEnd' | 'approveHandover' | 'cancel' | 'forceComplete',
   ) {
+    if (action === 'requestEnd' && !(await confirm({
+      title: 'تأكيد طلب الخروج',
+      message: 'هل تريد طلب تسجيل الخروج من مناوبتك الآن؟',
+      confirmLabel: 'نعم، اطلب الخروج',
+      cancelLabel: 'تراجع',
+      danger: false,
+    }))) return
     if (action === 'cancel' && !(await confirm('إلغاء الجلسة؟ ستظهر كـ "ملغاة" في السجلات.'))) return
     if (action === 'forceComplete' && !(await confirm(
       'إنهاء الجلسة يدوياً وتعليمها كمكتملة؟\n\nيُستخدم عند تجاوز انتظار التسليم — مثلاً عندما لا يصل الموظف التالي.',

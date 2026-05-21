@@ -136,16 +136,18 @@ export async function tryAutoApproveHandover(
     }
   }
 
-  // ── Wallet coverage: incoming wallets ⊆ union of all sources' wallets. ──
+  // ── Wallet coverage — a SOFT check. If the incoming wallets aren't fully
+  //    covered by the handed-over wallets we still auto-approve, but stamp a
+  //    warning note on the session so a manager can review it later. This
+  //    avoids stranding an employee in PENDING_START over a schedule mismatch.
   const union = new Set<string>()
   for (const o of coverageSources) {
     for (const w of o.wallets) union.add(w.accountId)
   }
-  for (const w of incoming.wallets) {
-    if (!union.has(w.accountId)) {
-      return { approved: false, reason: 'المحافظ المستلَمة لا تغطّيها المحافظ المسلَّمة' }
-    }
-  }
+  const uncovered = incoming.wallets.filter(w => !union.has(w.accountId))
+  const walletWarning = uncovered.length > 0
+    ? `تنبيه: ${uncovered.length} محفظة مستلَمة غير مغطّاة بالمحافظ المسلَّمة`
+    : null
 
   // ── Schedule check: incoming employee must be rostered today (Damascus). ──
   const todayKey = damascusDateStr(new Date())
@@ -167,6 +169,9 @@ export async function tryAutoApproveHandover(
 
   // ── Atomic flip: incoming → ACTIVE, every outgoing → COMPLETED. ──
   const now = new Date()
+  const autoNote = walletWarning
+    ? `موافقة تلقائية (تطابق الجدول) — ${walletWarning}`
+    : 'موافقة تلقائية (مطابقة محافظ + جدول)'
   try {
     await db.$transaction(async (tx: typeof db) => {
       const flipIn = await tx.shiftSession.updateMany({
@@ -177,8 +182,8 @@ export async function tryAutoApproveHandover(
           approvedById: null,
           approvedAt: now,
           notes: incoming!.notes
-            ? `${incoming!.notes} · موافقة تلقائية`
-            : 'موافقة تلقائية (مطابقة محافظ + جدول)',
+            ? `${incoming!.notes} · ${autoNote}`
+            : autoNote,
         },
       })
       if (flipIn.count === 0) throw new Error('race')
@@ -204,6 +209,7 @@ export async function tryAutoApproveHandover(
     outgoingSessionIds: outgoings.map(o => o.id),
     walletCount: incoming.wallets.length,
     triggeredBy: isIncomingTrigger(trigger) ? 'incoming' : 'outgoing',
+    walletWarning: walletWarning ?? undefined,
   })
-  return { approved: true }
+  return { approved: true, reason: walletWarning ?? undefined }
 }

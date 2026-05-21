@@ -93,16 +93,19 @@ describe('tryAutoApproveHandover — incoming trigger', () => {
     expect(transaction).not.toHaveBeenCalled()
   })
 
-  it('rejects when the incoming wallets are not covered by the sources', async () => {
+  it('auto-approves with a warning when incoming wallets are not fully covered', async () => {
     findUnique.mockResolvedValueOnce(baseIn)
     findFirst.mockResolvedValueOnce({
       ...baseOut,
       wallets: [{ accountId: 'w1' }, { accountId: 'w-different' }],
     })
+    shiftFindFirst.mockResolvedValueOnce({ id: 'sh', userId: 'u-in' })
+    updateMany.mockResolvedValue({ count: 1 })
+    auditLogCreate.mockResolvedValue({})
     const r = await tryAutoApproveHandover({ incomingSessionId: 'in-1' })
-    expect(r.approved).toBe(false)
-    // incoming holds w2, which the source does not cover
-    expect(r.reason).toMatch(/لا تغطّيها/)
+    // Wallet coverage is a soft check now — still approves, with a warning.
+    expect(r.approved).toBe(true)
+    expect(r.reason).toMatch(/غير مغطّاة/)
   })
 })
 

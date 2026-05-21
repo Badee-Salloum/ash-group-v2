@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
 
-// Pure logic mirror of the auto-approval pre-checks (wallet match + schedule
-// presence). The actual implementation now lives in src/lib/shifts/autoApprove.ts;
-// here we re-implement the gate predicate to lock its semantics in place. The
-// real function is exercised end-to-end with a mocked DB in
-// tests/shifts.autoApprove.integration.test.ts.
+// Pure logic mirror of the auto-approval HARD gates (an outgoing PENDING_END
+// must exist + the incoming employee must be scheduled). Wallet coverage is
+// NOT a gate — it is a soft check that only stamps a warning note — so it is
+// intentionally absent here. The actual implementation lives in
+// src/lib/shifts/autoApprove.ts and is exercised end-to-end with a mocked DB
+// in tests/shifts.autoApprove.integration.test.ts.
 
 interface SessionLite {
   id: string
@@ -26,13 +27,6 @@ function gate(opts: {
   if (!incoming.handoverFromUserId)        return { approved: false, reason: 'لا يوجد تسليم لمطابقته' }
   if (!incoming.shiftNumber)               return { approved: false, reason: 'رقم المناوبة غير محدد — يلزم موافقة يدوية' }
   if (!outgoing)                           return { approved: false, reason: 'لا توجد جلسة سابقة بانتظار الإغلاق' }
-
-  const inSet = new Set(incoming.wallets.map(w => w.accountId))
-  const outSet = new Set(outgoing.wallets.map(w => w.accountId))
-  if (inSet.size !== outSet.size)          return { approved: false, reason: 'عدد المحافظ المسلَّمة لا يطابق المستلَمة' }
-  for (const id of inSet) {
-    if (!outSet.has(id))                   return { approved: false, reason: 'المحافظ المختارة لا تطابق المحافظ المسلَّمة' }
-  }
 
   if (!scheduledToday)                     return { approved: false, reason: 'الموظف غير مجدول لهذه المناوبة اليوم' }
   if (scheduledToday.isDayOff)             return { approved: false, reason: 'الموظف غير مجدول لهذه المناوبة اليوم' }
@@ -70,22 +64,12 @@ describe('handover auto-approval gate', () => {
     expect(r.reason).toContain('سابقة')
   })
 
-  it('rejects when wallet count differs', () => {
-    const r = gate({
-      incoming: { ...baseIn, wallets: [{ accountId: 'w1' }] },
-      outgoing: baseOut, scheduledToday: baseSched,
-    })
-    expect(r.approved).toBe(false)
-    expect(r.reason).toContain('عدد المحافظ')
-  })
-
-  it('rejects when wallet ids differ', () => {
+  it('approves even when wallet sets differ (wallet coverage is not a gate)', () => {
     const r = gate({
       incoming: { ...baseIn, wallets: [{ accountId: 'wX' }, { accountId: 'w2' }] },
       outgoing: baseOut, scheduledToday: baseSched,
     })
-    expect(r.approved).toBe(false)
-    expect(r.reason).toContain('لا تطابق')
+    expect(r).toEqual({ approved: true })
   })
 
   it('rejects when not scheduled', () => {
