@@ -517,9 +517,16 @@ export default function SchedulePage() {
           shift={handoverEditing}
           previousShiftEmployees={(() => {
             const pc = prevCellOf(handoverEditing.date.slice(0, 10), handoverEditing.shiftNumber)
-            return shifts
+            const prev = shifts
               .filter(s => s.date.slice(0, 10) === pc.date && s.shiftNumber === pc.sn && !s.isDayOff)
-              .map(s => ({ id: s.userId, name: s.user?.name || employeeById.get(s.userId)?.name || '?' }))
+              .map(s => ({ id: s.userId, name: s.user?.name || employeeById.get(s.userId)?.name || '؟', inPrevShift: true }))
+            // Also surface any already-linked source no longer on the previous
+            // shift, so a stale handover link is visible and can be unticked.
+            const have = new Set(prev.map(p => p.id))
+            const stale = handoverEditing.handoverFromUserIds
+              .filter(id => !have.has(id))
+              .map(id => ({ id, name: employeeById.get(id)?.name || '؟', inPrevShift: false }))
+            return [...prev, ...stale]
           })()}
           onClose={() => setHandoverEditing(null)}
           onSave={(ids) => {
@@ -608,7 +615,7 @@ function HandoverPickerModal({
   shift, previousShiftEmployees, onClose, onSave,
 }: {
   shift: Shift
-  previousShiftEmployees: Array<{ id: string; name: string }>
+  previousShiftEmployees: Array<{ id: string; name: string; inPrevShift: boolean }>
   onClose: () => void
   onSave: (userIds: string[]) => void
 }) {
@@ -652,6 +659,11 @@ function HandoverPickerModal({
                   }`}>
                     <input type="checkbox" checked={active} onChange={() => toggle(e.id)} className="rounded border-gray-300" />
                     <span className="text-sm font-medium text-gray-800">{e.name}</span>
+                    {!e.inPrevShift && (
+                      <span className="text-[11px] text-amber-600 bg-amber-50 ring-1 ring-amber-200 rounded px-1.5 py-0.5">
+                        أُزيل من الشيفت السابق
+                      </span>
+                    )}
                   </label>
                 )
               })}
