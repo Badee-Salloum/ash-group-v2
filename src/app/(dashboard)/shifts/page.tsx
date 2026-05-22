@@ -257,7 +257,7 @@ export default function ShiftsPage() {
                   <>
                     <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
                       شيفت {myShift.shiftNumber === 'ONE' ? 'أول' : myShift.shiftNumber === 'TWO' ? 'ثاني' : 'ثالث'}
-                      <span className="text-sm font-normal text-gray-500"> — {myShift.windowLabel}</span>
+                      <span className="text-sm font-normal text-gray-500"> — <span dir="ltr">{myShift.windowLabel}</span></span>
                     </p>
                     {myShift.handoverNames.length > 0 && (
                       <p className="text-xs text-violet-700 mt-1">
@@ -296,7 +296,7 @@ export default function ShiftsPage() {
             {myRecent.map(s => (
               <div key={s.id} className="border border-gray-200 rounded-xl p-3 flex items-center justify-between flex-wrap gap-2">
                 <p className="text-xs text-gray-500 font-mono">
-                  {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}
+                  <span dir="ltr">{fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}</span>
                   {s.durationMinutes != null && (
                     <span className="ms-2 text-gray-400">
                       ({Math.floor(s.durationMinutes / 60)}س {s.durationMinutes % 60}د)
@@ -469,7 +469,7 @@ export default function ShiftsPage() {
                       <div>
                         <p className="font-medium text-sm">{s.user.name}</p>
                         <p className="text-xs text-gray-500 font-mono">
-                          {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}
+                          <span dir="ltr">{fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : '?'}</span>
                           {s.durationMinutes != null && (
                             <span className="ms-2 text-gray-400">
                               ({Math.floor(s.durationMinutes / 60)}س {s.durationMinutes % 60}د)

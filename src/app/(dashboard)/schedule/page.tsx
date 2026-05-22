@@ -411,7 +411,7 @@ export default function SchedulePage() {
                         <span className="text-[9px] font-bold bg-emerald-600 text-white rounded px-1 py-0.5">الآن</span>
                       )}
                     </div>
-                    <div className="text-[10px] text-gray-500 font-mono">{SHIFT_LABEL[sn].label}</div>
+                    <div className="text-[10px] text-gray-500 font-mono"><span dir="ltr">{SHIFT_LABEL[sn].label}</span></div>
                   </td>
                   {days.map((dateStr, i) => {
                     const list = getShifts(dateStr, sn)

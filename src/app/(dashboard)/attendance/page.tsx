@@ -273,7 +273,7 @@ export default function AttendancePage() {
                             <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">جلسات اليوم</p>
                             {d.sessions.map(s => (
                               <div key={s.id} className="text-xs py-1 border-b border-gray-50 last:border-0">
-                                <div className="font-mono text-gray-700">
+                                <div className="font-mono text-gray-700" dir="ltr">
                                   {fmtSyria(s.startAt, false)} → {s.endAt ? fmtSyria(s.endAt, false) : 'الآن'}
                                 </div>
                                 <div className="text-[10px] text-gray-400">
