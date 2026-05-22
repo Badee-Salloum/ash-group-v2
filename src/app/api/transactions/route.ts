@@ -83,6 +83,8 @@ export async function GET(req: NextRequest) {
         include: {
           account: { select: { name: true, currency: true } },
           matchedTx: { select: { rawData: true, platformTxId: true, platformUserId: true, shamCashTxId: true, amount: true, source: true } },
+          // Module D — the employee inferred to have handled this operation.
+          handledByUser: { select: { id: true, name: true } },
         },
         orderBy: { [sortBy]: sortDir },
         skip: (page - 1) * pageSize,

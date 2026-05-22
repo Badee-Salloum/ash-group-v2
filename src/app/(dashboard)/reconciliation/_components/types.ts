@@ -62,6 +62,10 @@ export interface Transaction {
   reviewedBy: string | null
   reviewedAt: string | null
   followUpStatus: FollowUpStat | null
+  // Module D — employee inferred to have performed this operation
+  // (shift session covering the op time + the op's wallet).
+  handledByUser: { id: string; name: string } | null
+  handlerAmbiguous: boolean
 }
 
 export interface Filters {

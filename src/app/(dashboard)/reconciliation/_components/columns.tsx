@@ -138,6 +138,23 @@ export function buildColumns({
       },
     },
     {
+      key: 'handledByUser',
+      header: 'الموظف',
+      sortable: false,
+      render: row => {
+        const handler = row.handledByUser as { id: string; name: string } | null
+        if (!handler) return <span className="text-gray-300">—</span>
+        return (
+          <span className="inline-flex items-center gap-1 text-sm text-gray-700">
+            {handler.name}
+            {(row.handlerAmbiguous as boolean) && (
+              <span className="text-amber-500 font-bold cursor-help" title="أكثر من موظف محتمل — تحقّق يدوياً">؟</span>
+            )}
+          </span>
+        )
+      },
+    },
+    {
       key: 'shamCashTxId',
       header: 'رقم شام كاش',
       render: row => {

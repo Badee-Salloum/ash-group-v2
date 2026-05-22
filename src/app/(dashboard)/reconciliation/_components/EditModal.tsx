@@ -108,6 +108,13 @@ export function EditModal({ tx, onClose, onSaved }: { tx: Transaction; onClose: 
             <div className="flex justify-between"><span>النوع:</span><span className="font-semibold text-gray-700">{TYPE_LABELS[tx.type]}</span></div>
             <div className="flex justify-between"><span>المصدر:</span><span className="font-semibold text-gray-700">{tx.source === 'SHAM_CASH' ? 'شام كاش' : 'المنصة'}</span></div>
             <div className="flex justify-between"><span>التاريخ:</span><span className="font-mono text-gray-700">{fmtSyria(tx.txDateTime)}</span></div>
+            <div className="flex justify-between">
+              <span>الموظف المنفِّذ:</span>
+              <span className="font-semibold text-gray-700">
+                {tx.handledByUser ? tx.handledByUser.name : '—'}
+                {tx.handlerAmbiguous && <span className="text-amber-600"> (غير مؤكد)</span>}
+              </span>
+            </div>
           </div>
 
           {/* Status */}
