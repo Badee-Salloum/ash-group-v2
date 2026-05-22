@@ -116,10 +116,12 @@ export async function tryAutoApproveHandover(
   //   COMPLETED (recent) → already handed over this cycle (e.g. a source
   //                        shared with another taker whose handover ran
   //                        first) → counts for wallet coverage, not flipped.
-  //   anything else      → the colleague hasn't handed over yet → block.
+  //   ACTIVE             → still on shift, hasn't requested checkout → block.
+  //   anything else      → a no-show source → don't block; warn instead.
   const HANDOVER_RECENT_MS = 12 * 60 * 60 * 1000
   const outgoings: SessionWithWallets[] = []        // PENDING_END → will flip
   const coverageSources: SessionWithWallets[] = []  // contribute wallet coverage
+  let absentSources = 0                             // sources that never showed up
   for (const srcId of sources) {
     const latest = await loadLatestSessionFor(srcId)
     if (latest?.status === 'PENDING_END') {
@@ -131,8 +133,14 @@ export async function tryAutoApproveHandover(
       Date.now() - latest.endAt.getTime() < HANDOVER_RECENT_MS
     ) {
       coverageSources.push(latest)
-    } else {
+    } else if (latest?.status === 'ACTIVE') {
+      // The previous employee is still on shift (hasn't requested checkout)
+      // — a real conflict → keep the hard block.
       return { approved: false, reason: 'في انتظار تسجيل خروج جميع موظفي الشيفت السابق' }
+    } else {
+      // No relevant session — the source never showed up. Don't block; the
+      // incoming employee proceeds and a warning note is stamped below.
+      absentSources++
     }
   }
 
@@ -145,9 +153,12 @@ export async function tryAutoApproveHandover(
     for (const w of o.wallets) union.add(w.accountId)
   }
   const uncovered = incoming.wallets.filter(w => !union.has(w.accountId))
-  const walletWarning = uncovered.length > 0
-    ? `تنبيه: ${uncovered.length} محفظة مستلَمة غير مغطّاة بالمحافظ المسلَّمة`
-    : null
+
+  // Combined soft warnings — auto-approval proceeds, but the note records why.
+  const warnings: string[] = []
+  if (absentSources > 0) warnings.push(`${absentSources} مصدر تسليم لم يسجّل دخوله`)
+  if (uncovered.length > 0) warnings.push(`${uncovered.length} محفظة مستلَمة غير مغطّاة بالمحافظ المسلَّمة`)
+  const warningText = warnings.length > 0 ? `تنبيه: ${warnings.join(' · ')}` : null
 
   // ── Schedule check: incoming employee must be rostered today (Damascus). ──
   const todayKey = damascusDateStr(new Date())
@@ -169,8 +180,8 @@ export async function tryAutoApproveHandover(
 
   // ── Atomic flip: incoming → ACTIVE, every outgoing → COMPLETED. ──
   const now = new Date()
-  const autoNote = walletWarning
-    ? `موافقة تلقائية (تطابق الجدول) — ${walletWarning}`
+  const autoNote = warningText
+    ? `موافقة تلقائية (تطابق الجدول) — ${warningText}`
     : 'موافقة تلقائية (مطابقة محافظ + جدول)'
   try {
     await db.$transaction(async (tx: typeof db) => {
@@ -209,7 +220,7 @@ export async function tryAutoApproveHandover(
     outgoingSessionIds: outgoings.map(o => o.id),
     walletCount: incoming.wallets.length,
     triggeredBy: isIncomingTrigger(trigger) ? 'incoming' : 'outgoing',
-    walletWarning: walletWarning ?? undefined,
+    warning: warningText ?? undefined,
   })
-  return { approved: true, reason: walletWarning ?? undefined }
+  return { approved: true, reason: warningText ?? undefined }
 }

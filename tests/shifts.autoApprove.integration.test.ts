@@ -84,13 +84,16 @@ describe('tryAutoApproveHandover — incoming trigger', () => {
     expect(auditArgs.data.details.triggeredBy).toBe('incoming')
   })
 
-  it('rejects with waiting message when no outgoing PENDING_END yet', async () => {
+  it('auto-approves with a warning when a handover source never showed up', async () => {
     findUnique.mockResolvedValueOnce(baseIn)
-    findFirst.mockResolvedValueOnce(null) // no outgoing yet
+    findFirst.mockResolvedValueOnce(null) // source has no session — a no-show
+    shiftFindFirst.mockResolvedValueOnce({ id: 'sh', userId: 'u-in' })
+    updateMany.mockResolvedValue({ count: 1 })
+    auditLogCreate.mockResolvedValue({})
     const r = await tryAutoApproveHandover({ incomingSessionId: 'in-1' })
-    expect(r.approved).toBe(false)
-    expect(r.reason).toMatch(/في انتظار تسجيل خروج/)
-    expect(transaction).not.toHaveBeenCalled()
+    // A no-show source no longer blocks — it approves with a warning.
+    expect(r.approved).toBe(true)
+    expect(r.reason).toMatch(/لم يسجّل دخوله/)
   })
 
   it('auto-approves with a warning when incoming wallets are not fully covered', async () => {

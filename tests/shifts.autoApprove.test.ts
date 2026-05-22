@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 
-// Pure logic mirror of the auto-approval HARD gates (an outgoing PENDING_END
-// must exist + the incoming employee must be scheduled). Wallet coverage is
-// NOT a gate — it is a soft check that only stamps a warning note — so it is
+// Pure logic mirror of the auto-approval HARD gates. The only hard blocks
+// are: a handover source still ACTIVE on shift, and the incoming employee not
+// being scheduled. Wallet coverage and a no-show (absent) source are NOT
+// gates — they are soft checks that only stamp a warning note — so they are
 // intentionally absent here. The actual implementation lives in
 // src/lib/shifts/autoApprove.ts and is exercised end-to-end with a mocked DB
 // in tests/shifts.autoApprove.integration.test.ts.
@@ -26,7 +27,8 @@ function gate(opts: {
   if (incoming.status !== 'PENDING_START') return { approved: false, reason: 'الجلسة ليست بانتظار الموافقة' }
   if (!incoming.handoverFromUserId)        return { approved: false, reason: 'لا يوجد تسليم لمطابقته' }
   if (!incoming.shiftNumber)               return { approved: false, reason: 'رقم المناوبة غير محدد — يلزم موافقة يدوية' }
-  if (!outgoing)                           return { approved: false, reason: 'لا توجد جلسة سابقة بانتظار الإغلاق' }
+  // A source still ACTIVE on shift hard-blocks; a missing/no-show source does not.
+  if (outgoing && outgoing.status === 'ACTIVE') return { approved: false, reason: 'في انتظار تسجيل خروج جميع موظفي الشيفت السابق' }
 
   if (!scheduledToday)                     return { approved: false, reason: 'الموظف غير مجدول لهذه المناوبة اليوم' }
   if (scheduledToday.isDayOff)             return { approved: false, reason: 'الموظف غير مجدول لهذه المناوبة اليوم' }
@@ -58,10 +60,19 @@ describe('handover auto-approval gate', () => {
     expect(r.reason).toContain('رقم المناوبة')
   })
 
-  it('rejects when no outgoing PENDING_END', () => {
+  it('approves when the handover source is absent / a no-show', () => {
     const r = gate({ incoming: baseIn, outgoing: null, scheduledToday: baseSched })
+    expect(r).toEqual({ approved: true })
+  })
+
+  it('rejects when a handover source is still ACTIVE on shift', () => {
+    const r = gate({
+      incoming: baseIn,
+      outgoing: { ...baseOut, status: 'ACTIVE' },
+      scheduledToday: baseSched,
+    })
     expect(r.approved).toBe(false)
-    expect(r.reason).toContain('سابقة')
+    expect(r.reason).toContain('في انتظار تسجيل خروج')
   })
 
   it('approves even when wallet sets differ (wallet coverage is not a gate)', () => {
