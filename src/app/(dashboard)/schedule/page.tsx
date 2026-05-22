@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Save, Loader2, Sparkles, Trash2, X, Wallet, Check, Copy, ClipboardPaste, ArrowRightLeft } from 'lucide-react'
-import { weekStartStr, weekDays, addDays, dayOfWeek } from '@/lib/datetime'
+import { weekStartStr, weekDays, addDays, dayOfWeek, damascusDateStr, damascusMinutesOfDay } from '@/lib/datetime'
 import { previousShift, previousShiftIsPriorDay } from '@/lib/shifts/shiftWindow'
 import { suggestHandover } from '@/lib/schedule/handoverSuggest'
 import { useToast } from '@/components/ui/Toast'
@@ -69,6 +69,14 @@ export default function SchedulePage() {
   const toast = useToast()
 
   const days = weekDays(weekStart)
+
+  // Highlight "today" + the currently-running shift in the grid.
+  const todayKey = damascusDateStr(new Date())
+  const nowMin = damascusMinutesOfDay()
+  const currentShift: ShiftNum =
+    nowMin >= 360 && nowMin < 840 ? 'ONE'
+      : nowMin >= 840 && nowMin < 1320 ? 'TWO'
+        : 'THREE'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -367,9 +375,16 @@ export default function SchedulePage() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-3 text-right font-semibold text-gray-600 w-32">المناوبة</th>
                 {days.map((d, i) => (
-                  <th key={i} className="px-2 py-3 text-center font-semibold text-gray-600 min-w-[170px]">
-                    <div className="text-xs">{DAY_NAMES[dayOfWeek(d)]}</div>
-                    <div className="text-[10px] text-gray-400 font-mono">{d.slice(5)}</div>
+                  <th key={i} className={`px-2 py-3 text-center font-semibold min-w-[170px] ${
+                    d === todayKey ? 'bg-blue-50 text-blue-800' : 'text-gray-600'
+                  }`}>
+                    <div className="text-xs flex items-center justify-center gap-1">
+                      {DAY_NAMES[dayOfWeek(d)]}
+                      {d === todayKey && (
+                        <span className="text-[9px] font-bold bg-blue-600 text-white rounded px-1 py-0.5">اليوم</span>
+                      )}
+                    </div>
+                    <div className={`text-[10px] font-mono ${d === todayKey ? 'text-blue-500' : 'text-gray-400'}`}>{d.slice(5)}</div>
                     <div className="flex items-center justify-center gap-1 mt-1">
                       <button onClick={() => copyDay(d)} className="text-gray-400 hover:text-blue-600" title="نسخ اليوم">
                         <Copy size={11} />
@@ -387,8 +402,15 @@ export default function SchedulePage() {
             <tbody>
               {(['ONE', 'TWO', 'THREE'] as const).map(sn => (
                 <tr key={sn} className="border-b border-gray-100">
-                  <td className={`px-3 py-3 align-top ${SHIFT_LABEL[sn].cls} border-r-4 sticky right-0 z-10`}>
-                    <div className="text-sm font-bold text-gray-700">شيفت {SHIFT_AR[sn]}</div>
+                  <td className={`px-3 py-3 align-top ${SHIFT_LABEL[sn].cls} border-r-4 sticky right-0 z-10 ${
+                    sn === currentShift ? 'ring-2 ring-inset ring-emerald-400' : ''
+                  }`}>
+                    <div className="text-sm font-bold text-gray-700 flex items-center gap-1">
+                      شيفت {SHIFT_AR[sn]}
+                      {sn === currentShift && (
+                        <span className="text-[9px] font-bold bg-emerald-600 text-white rounded px-1 py-0.5">الآن</span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-gray-500 font-mono">{SHIFT_LABEL[sn].label}</div>
                   </td>
                   {days.map((dateStr, i) => {
@@ -400,7 +422,7 @@ export default function SchedulePage() {
                       s => s.date.slice(0, 10) === pc.date && s.shiftNumber === pc.sn && !s.isDayOff,
                     )
                     return (
-                      <td key={i} className="px-2 py-2 align-top">
+                      <td key={i} className={`px-2 py-2 align-top ${dateStr === todayKey ? 'bg-blue-50/40' : ''}`}>
                         <div className="flex items-center justify-end gap-1 mb-1">
                           <button onClick={() => copyCell(dateStr, sn)} className="text-gray-300 hover:text-blue-600" title="نسخ الخلية">
                             <Copy size={11} />
