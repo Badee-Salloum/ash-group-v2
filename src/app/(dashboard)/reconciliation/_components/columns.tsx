@@ -1,0 +1,317 @@
+'use client'
+import Link from 'next/link'
+import { Pencil, ExternalLink } from 'lucide-react'
+import { Column } from '@/components/tables/DataTable'
+import { fmtSyria } from '@/lib/datetime'
+import ManualWithdrawalLink from '@/components/forms/ManualWithdrawalLink'
+import ManualDepositLink from '@/components/forms/ManualDepositLink'
+import SuggestMatchButton from '@/components/forms/SuggestMatchButton'
+import { BatchTraceBadge, BatchTraceInfo } from '@/components/ui/BatchTraceBadge'
+import {
+  Transaction, TxStatus, TxType, ReviewCat, FollowUpStat,
+  REVIEW_LABELS, REVIEW_COLORS, STATUS_LABELS, TYPE_LABELS,
+  MatchInfoMap,
+} from './types'
+
+// Coalesce the slightly different batch shapes returned by Prisma include vs
+// the customer-page raw SQL into the BatchTraceInfo our chip expects.
+function readBatch(raw: unknown): BatchTraceInfo | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as { id?: string; batchDate?: string | null; createdAt?: string | null; uploaderName?: string | null; uploader?: { name?: string | null } | null }
+  if (!b.id) return null
+  return {
+    id: b.id,
+    batchDate: b.batchDate ?? null,
+    createdAt: b.createdAt ?? null,
+    uploaderName: b.uploaderName ?? b.uploader?.name ?? null,
+  }
+}
+
+export function buildColumns({
+  data,
+  restricted,
+  matchInfo,
+  setEditTx,
+  reload,
+  onDuplicateClick,
+}: {
+  data: Transaction[]
+  restricted: boolean
+  matchInfo: MatchInfoMap
+  setEditTx: (t: Transaction) => void
+  reload: () => void
+  onDuplicateClick?: (shamCashTxId: string) => void
+}): Column<Record<string, unknown>>[] {
+  // Pre-index once instead of doing `data.findIndex` on every row render
+  // (was O(n²) — noticeable on 10K-row loads).
+  const indexById = new Map<string, number>()
+  for (let i = 0; i < data.length; i++) indexById.set(data[i].id, i + 1)
+
+  const columns: Column<Record<string, unknown>>[] = [
+    {
+      key: '__index',
+      header: '#',
+      sortable: false,
+      render: row => {
+        const n = indexById.get(row.id as string)
+        return <span className="text-[11px] font-mono text-gray-400">{n ?? '—'}</span>
+      },
+    },
+    {
+      key: 'txDateTime',
+      header: 'التاريخ والوقت',
+      render: row => (
+        <span className="text-xs text-gray-600 font-mono">
+          {fmtSyria(row.txDateTime as string)}
+        </span>
+      ),
+    },
+    {
+      key: 'batch',
+      header: 'الرفعة',
+      sortable: true,
+      render: row => <BatchTraceBadge batch={readBatch(row.batch)} />,
+    },
+    { key: 'account', header: 'الحساب', render: row => (row.account as { name: string }).name },
+    {
+      key: 'type',
+      header: 'النوع',
+      render: row => <span className="text-sm">{TYPE_LABELS[row.type as TxType]}</span>,
+    },
+    {
+      key: 'status',
+      header: 'الحالة',
+      render: row => {
+        // When the reviewer has flagged this as an internal transfer, show
+        // that prominently instead of the raw matching status — the row is
+        // no longer "a discrepancy that needs resolving", it's a known
+        // internal wallet move that's excluded from the P/L.
+        if (row.reviewCategory === 'INTERNAL_TRANSFER') {
+          return <span className="badge bg-slate-200 text-slate-800 ring-slate-300">تحويل داخلي</span>
+        }
+        const s = STATUS_LABELS[row.status as TxStatus]
+        return <span className={`badge ${s.cls}`}>{s.label}</span>
+      },
+    },
+    {
+      key: 'reviewCategory',
+      header: 'المراجعة',
+      render: row => {
+        const cat = row.reviewCategory as ReviewCat | null
+        const status = row.status as TxStatus
+        const notes = (row.reviewNotes as string | null) || ''
+        const reviewedAt = row.reviewedAt as string | null
+        const followUp = row.followUpStatus as FollowUpStat | null
+        const followUpActive = followUp === 'OPEN' || followUp === 'IN_PROGRESS'
+        if (cat) {
+          const tipParts = [REVIEW_LABELS[cat]]
+          if (notes) tipParts.push(notes)
+          if (reviewedAt) tipParts.push(`في ${fmtSyria(reviewedAt, false)}`)
+          return (
+            <div className="flex flex-col gap-1 items-start">
+              <span
+                className={`badge ring-1 ${REVIEW_COLORS[cat]}`}
+                title={tipParts.join('\n')}
+              >
+                {REVIEW_LABELS[cat]}
+              </span>
+              {followUpActive && (
+                <Link
+                  href={`/follow-ups?status=${followUp}`}
+                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ring-1 transition-colors ${
+                    followUp === 'OPEN'
+                      ? 'bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100'
+                      : 'bg-sky-50 text-sky-700 ring-sky-200 hover:bg-sky-100'
+                  }`}
+                  title="افتح صفحة المتابعات"
+                >
+                  {followUp === 'OPEN' ? '● متابعة مفتوحة' : '● قيد المعالجة'}
+                </Link>
+              )}
+            </div>
+          )
+        }
+        // Non-reviewed: show "مراجعة" button only for non-matched rows
+        if (status === 'MATCHED') return <span className="text-gray-300">—</span>
+        return (
+          <button
+            onClick={() => setEditTx(row as unknown as Transaction)}
+            className="text-[11px] text-amber-700 bg-amber-50 hover:bg-amber-100 ring-1 ring-amber-200 px-2 py-0.5 rounded-md transition-colors"
+            title="افتح نافذة التعديل لتسجيل نتيجة المراجعة"
+          >
+            مراجعة
+          </button>
+        )
+      },
+    },
+    {
+      key: 'accountName',
+      header: 'اسم الحساب',
+      render: row => {
+        const name = (row.customerName as string | null) || ''
+        if (!name) return <span className="text-gray-400">—</span>
+        return (
+          <Link
+            href={`/customers/${encodeURIComponent(name)}`}
+            className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-brand-600 hover:underline group"
+            title="فتح صفحة العميل"
+          >
+            <span>{name}</span>
+            <ExternalLink size={11} className="opacity-0 group-hover:opacity-100 transition-opacity text-brand-500" />
+          </Link>
+        )
+      },
+    },
+    {
+      key: 'handledByUser',
+      header: 'الموظف',
+      sortable: true,
+      render: row => {
+        const handler = row.handledByUser as { id: string; name: string } | null
+        if (!handler) return <span className="text-gray-300">—</span>
+        return (
+          <span className="inline-flex items-center gap-1 text-sm text-gray-700">
+            {handler.name}
+            {(row.handlerAmbiguous as boolean) && (
+              <span className="text-amber-500 font-bold cursor-help" title="أكثر من موظف محتمل — تحقّق يدوياً">؟</span>
+            )}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'shamCashTxId',
+      header: 'رقم شام كاش',
+      render: row => {
+        const matchedTx = row.matchedTx as Record<string, unknown> | null
+        const sc = (row.shamCashTxId as string) || (matchedTx?.shamCashTxId as string) || '—'
+        if (sc === '—') return sc
+        // Both review reasons use the existing duplicate badge. Keep the
+        // underlying reasons separate in the API; do not change tx status.
+        const isDup = row.hasDuplicateSc === true || row.hasCurrencyMismatch === true
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono">{sc}</span>
+            {isDup && (
+              <button
+                onClick={e => { e.stopPropagation(); onDuplicateClick?.(sc) }}
+                className="text-[10px] bg-red-100 text-red-700 border border-red-300 px-1.5 py-0.5 rounded font-bold hover:bg-red-200 transition-colors cursor-pointer"
+                title="هذا الرقم مكرّر — اضغط لعرض كل المطابقات المرتبطة"
+              >
+                ⚠ مكرّر
+              </button>
+            )}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'platformTxId',
+      header: 'رقم المنصة',
+      render: row => {
+        const matchedTx = row.matchedTx as Record<string, unknown> | null
+        return (row.platformTxId as string) || (matchedTx?.platformTxId as string) || '—'
+      },
+    },
+    {
+      key: 'platformUserId',
+      header: 'User ID',
+      render: row => {
+        const matchedTx = row.matchedTx as Record<string, unknown> | null
+        const uid = (row.platformUserId as string) || (matchedTx?.platformUserId as string) || ''
+        if (!uid) return <span className="text-gray-400">—</span>
+        return (
+          <Link
+            href={`/customers/by-user/${encodeURIComponent(uid)}`}
+            className="inline-flex items-center gap-1 font-mono text-xs text-blue-700 hover:text-blue-900 hover:underline group"
+            title="فتح صفحة العميل (عبر USER ID)"
+          >
+            <span>{uid}</span>
+            <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+          </Link>
+        )
+      },
+    },
+    ...(!restricted ? [{
+      key: 'amount',
+      header: 'المبلغ',
+      render: (row: Record<string, unknown>) => {
+        const currency = row.currency as string
+        const amount = Number(row.amount)
+        return (
+          <span className="font-mono font-medium">
+            {amount.toLocaleString('en', { minimumFractionDigits: 2 })} {currency}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'amountDiff',
+      header: 'الفارق',
+      render: (row: Record<string, unknown>) => row.amountDiff
+        ? <span className="text-red-600 font-mono text-sm font-bold">
+            {Number(row.amountDiff).toLocaleString('en', { minimumFractionDigits: 2 })}
+          </span>
+        : '—',
+    }] : []),
+    { key: 'source', header: 'المصدر', render: row => row.source === 'SHAM_CASH' ? 'شام كاش' : 'المنصة' },
+    {
+      key: 'notes',
+      header: 'ملاحظات',
+      render: row => {
+        const txt = (row.displayNotes as string | null) || (row.notes as string | null) || ''
+        if (!txt) return <span className="text-gray-400">—</span>
+        return (
+          <span className="text-xs text-gray-600 line-clamp-2 max-w-[240px]" title={txt}>
+            {txt}
+          </span>
+        )
+      },
+    },
+    ...(!restricted ? [{
+      key: 'actions',
+      header: 'إجراء',
+      sortable: false,
+      render: (row: Record<string, unknown>) => {
+        const status = row.status as TxStatus
+        const type = row.type as TxType
+
+        return (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setEditTx(row as unknown as Transaction)}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+              title="تعديل"
+            >
+              <Pencil size={13} />
+            </button>
+            {status === 'DISCREPANCY' && type === 'WITHDRAWAL' && (
+              <ManualWithdrawalLink
+                platformTxId={row.id as string}
+                platformAmount={Number(row.amount)}
+                currency={row.currency as string}
+                onResolved={reload}
+              />
+            )}
+            {status === 'DISCREPANCY' && type === 'DEPOSIT' && (
+              <ManualDepositLink
+                depositTxId={row.id as string}
+                depositAmount={Number(row.amount)}
+                currency={row.currency as string}
+                onResolved={reload}
+              />
+            )}
+            {(status === 'PENDING_SC' || status === 'PENDING_P') && (
+              <SuggestMatchButton
+                transactionId={row.id as string}
+                onResolved={reload}
+                bestMatch={matchInfo[row.id as string] ?? undefined}
+              />
+            )}
+          </div>
+        )
+      },
+    }] : []),
+  ]
+  return columns
+}

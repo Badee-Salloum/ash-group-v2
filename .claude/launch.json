@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "talentsbridge",
+      "runtimeExecutable": ".claude\\start-talentsbridge.cmd",
+      "runtimeArgs": [],
+      "cwd": ".",
+      "port": 3000
+    },
+    {
+      "name": "financial-platform",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3001"],
+      "cwd": ".",
+      "port": 3001
+    },
+    {
+      "name": "site-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "site", "-p", "3002", "-c-1", "--silent"],
+      "cwd": ".",
+      "port": 3002
+    }
+  ]
+}

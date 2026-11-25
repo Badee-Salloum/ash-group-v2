@@ -1,0 +1,867 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Runtime uses the pooled Neon URL. Migrations, concurrent index creation,
+  // and resumable backfills use DIRECT_DATABASE_URL to avoid PgBouncer limits.
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  SUPERVISOR
+  ACCOUNT_MGR
+  MANAGER // Phase 2 — مدير فرع/فريق
+  EMPLOYEE // Phase 2 — موظف عادي
+  SHIFT_MANAGER // مدير نوبة — يراجع/يؤكّد ويسجّل التأخيرات
+}
+
+model User {
+  id               String    @id @default(cuid())
+  name             String
+  email            String    @unique
+  passwordHash     String
+  role             UserRole  @default(SUPERVISOR)
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  failedLogins     Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // ─── Phase 2: Employee Profile (Module A) ───
+  employeeCode String?   @unique
+  jobTitle     String?
+  hireDate     DateTime?
+  baseSalary   Decimal?  @db.Decimal(15, 2)
+  phone        String?
+  address      String?
+  avatarUrl    String?
+  // Hierarchy: each user has at most one direct manager
+  managerId    String?
+  manager      User?     @relation("EmployeeHierarchy", fields: [managerId], references: [id])
+  subordinates User[]    @relation("EmployeeHierarchy")
+  // Fixed weekly off-day chosen up-front by the branch manager. 0=Sunday
+  // … 6=Saturday. Null = no fixed off-day (7-day week). Replaces the
+  // legacy `weeklyOffDays` count + generator. The employees API enforces
+  // that no two wallet-sharing employees have off-days on consecutive
+  // calendar days.
+  weeklyOffDay Int?
+
+  // Phase E — notifications received by this user.
+  notifications       Notification[]       @relation("UserNotifications")
+  // Phase G — per-user permission overrides (allow/deny per capability key).
+  permissionOverrides PermissionOverride[] @relation("UserPermissionOverrides")
+  // Phase F — coverage half-shifts this user is assigned to (when a teammate is on leave).
+  coverageAssignments CoverageAssignment[] @relation("CoveringUser")
+
+  // Per-user UI preferences (e.g. table column order). Free-form JSON:
+  // { tableColumns: { [tableId]: string[] } }
+  uiPreferences Json?
+
+  accountAccess AccountAccess[]
+  auditLogs     AuditLog[]
+  expenses      Expense[]
+  uploadBatches UploadBatch[]
+
+  // Phase 2 relations
+  shiftSessions       ShiftSession[]       @relation("ShiftSessionUser")
+  approvedSessions    ShiftSession[]       @relation("ShiftSessionApprover")
+  scheduledShifts     Shift[]              @relation("ShiftAssignee")
+  assignedShifts      Shift[]              @relation("ShiftAssigner")
+  payrollEntries      PayrollEntry[]
+  advanceRequests     AdvanceRequest[]     @relation("AdvanceRequester")
+  approvedAdvances    AdvanceRequest[]     @relation("AdvanceApprover")
+  bonusLogs           BonusLog[]           @relation("BonusRecipient")
+  bonusesGiven        BonusLog[]           @relation("BonusCreator")
+  handledTransactions Transaction[]        @relation("TransactionHandler")
+  // Phase 3 — Module: customer-facing follow-ups (complaints, customer/platform errors)
+  followUpAssignments Transaction[]        @relation("FollowUpAssignee")
+  // Shift-manager layer: rows this user has logged a delay on / confirmed.
+  delayedTxs          Transaction[]        @relation("TxDelayLogger")
+  shiftConfirmedTxs   Transaction[]        @relation("TxShiftConfirmer")
+  // Leave group membership (per-shift group with up to 6 members) and the
+  // groups this user has been designated to cover (as a "spare" employee).
+  leaveGroup          LeaveGroup?          @relation("LeaveGroupMembers", fields: [leaveGroupId], references: [id], onDelete: SetNull)
+  leaveGroupId        String?
+  leaveGroupsCovered  LeaveGroup[]         @relation("LeaveGroupCover")
+  // Phase 3 — custom roles
+  customRoles         UserRoleAssignment[] @relation("UserCustomRoles")
+
+  @@index([managerId])
+  @@index([leaveGroupId])
+  @@map("users")
+}
+
+model AccountAccess {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, accountId])
+  @@map("account_access")
+}
+
+model Account {
+  id                   String   @id @default(cuid())
+  name                 String
+  currency             String   @default("USD")
+  depositProfitRate    Decimal  @db.Decimal(5, 2)
+  withdrawalProfitRate Decimal  @db.Decimal(5, 2)
+  walletIdentifiers    String[]
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  transactions      Transaction[]
+  uploadBatches     UploadBatch[]
+  profitRateHistory ProfitRateHistory[]
+  accountAccess     AccountAccess[]
+  // Phase 3 — wallets planned per scheduled shift (replaces EmployeeWalletAssignment)
+  shiftWallets      ShiftWallet[]
+
+  @@map("accounts")
+}
+
+model ProfitRateHistory {
+  id                   String   @id @default(cuid())
+  account              Account  @relation(fields: [accountId], references: [id])
+  accountId            String
+  depositProfitRate    Decimal  @db.Decimal(5, 2)
+  withdrawalProfitRate Decimal  @db.Decimal(5, 2)
+  changedAt            DateTime @default(now())
+  changedBy            String
+
+  @@map("profit_rate_history")
+}
+
+enum BatchStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model UploadBatch {
+  id              String      @id @default(cuid())
+  account         Account     @relation(fields: [accountId], references: [id])
+  accountId       String
+  batchDate       DateTime
+  shamCashFile    String?
+  depositsFile    String?
+  withdrawalsFile String?
+  status          BatchStatus @default(PROCESSING)
+  processedAt     DateTime?
+  rowsProcessed   Int         @default(0)
+  errorLog        String?
+  createdAt       DateTime    @default(now())
+  uploadedBy      String
+  uploader        User        @relation(fields: [uploadedBy], references: [id])
+
+  transactions Transaction[]
+
+  @@map("upload_batches")
+}
+
+enum TransactionSource {
+  SHAM_CASH
+  PLATFORM
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum TransactionStatus {
+  MATCHED
+  PENDING_SC
+  PENDING_P
+  DISCREPANCY
+  WASTE
+  RETURNS // مرتجعات — لا تدخل في حساب الأرباح ولا الهدر
+}
+
+enum ReviewCategory {
+  THEFT // سرقة
+  WASTE // هدر
+  EXTRA // زيادة
+  EMPLOYEE_ERROR // خطأ موظف
+  CUSTOMER_ERROR // خطأ زبون
+  PLATFORM_ERROR // خطأ منصة
+  COMPLAINT // شكوى
+  INTERNAL_TRANSFER // تحويل داخلي بين محافظ الشركة — يُستبعد من حسابات الربح/الهدر
+  OTHER // غير ذلك
+}
+
+// Follow-up workflow for customer-facing reviewed operations
+// (auto-opened when reviewCategory ∈ {COMPLAINT, CUSTOMER_ERROR, PLATFORM_ERROR}).
+enum FollowUpStatus {
+  OPEN // مفتوحة — تنتظر إجراء
+  IN_PROGRESS // قيد المعالجة — تواصل/تحقيق جارٍ
+  RESOLVED // تم الحل — اتُّخذ إجراء (تصحيح / استرجاع / إغلاق إيجابي)
+  CLOSED // مُغلقة بلا حل — لم يردّ الزبون / لم تُجدِ المتابعة
+}
+
+model Transaction {
+  id                 String            @id @default(cuid())
+  account            Account           @relation(fields: [accountId], references: [id])
+  accountId          String
+  batch              UploadBatch       @relation(fields: [batchId], references: [id])
+  batchId            String
+  source             TransactionSource
+  type               TransactionType
+  shamCashTxId       String?
+  platformTxId       String?
+  platformUserId     String?
+  amount             Decimal           @db.Decimal(15, 2)
+  currency           String            @default("USD")
+  txDateTime         DateTime
+  status             TransactionStatus @default(PENDING_P)
+  matchedTxId        String?
+  matchedTx          Transaction?      @relation("MatchedPair", fields: [matchedTxId], references: [id], onDelete: SetNull)
+  matchedBy          Transaction[]     @relation("MatchedPair")
+  amountDiff         Decimal?          @db.Decimal(15, 2)
+  rawData            Json?
+  // Persisted display/customer metadata. These values are populated during
+  // import and by the resumable performance backfill so list endpoints never
+  // need to load raw Excel JSON merely to render a customer or classify an
+  // internal wallet transfer.
+  customerName       String?
+  isInternalTransferAuto Boolean         @default(false)
+  notes              String?
+  // Manual review metadata (for non-matched operations)
+  reviewCategory     ReviewCategory?
+  reviewNotes        String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  // Phase 3 — Follow-up layer (set when reviewCategory ∈ COMPLAINT/CUSTOMER_ERROR/PLATFORM_ERROR)
+  followUpStatus     FollowUpStatus?
+  followUpAssignedTo String?
+  followUpAssignee   User?             @relation("FollowUpAssignee", fields: [followUpAssignedTo], references: [id])
+  followUpResolution String?
+  followUpResolvedAt DateTime?
+  followUpResolvedBy String?
+  // Phase 2 — Module D: link to handling employee
+  handledByUserId    String?
+  handledByUser      User?             @relation("TransactionHandler", fields: [handledByUserId], references: [id])
+  handledInSessionId String?
+  handledInSession   ShiftSession?     @relation("TransactionSession", fields: [handledInSessionId], references: [id])
+  handlerAmbiguous   Boolean           @default(false)
+  // Shift-manager layer:
+  //   * hasDelay flags "the shift manager noticed a delay on this op"
+  //     (no duration — the check is binary). Contributes to the streak
+  //     breaker when the configured delay-limit is > 0.
+  //   * shiftConfirmed = the shift manager reviewed this row and it
+  //     drops out of the SM's queue. Independent from reviewCategory.
+  hasDelay           Boolean           @default(false)
+  delayLoggedById    String?
+  delayLoggedBy      User?             @relation("TxDelayLogger", fields: [delayLoggedById], references: [id])
+  delayLoggedAt      DateTime?
+  shiftConfirmedById String?
+  shiftConfirmedBy   User?             @relation("TxShiftConfirmer", fields: [shiftConfirmedById], references: [id])
+  shiftConfirmedAt   DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([accountId, status])
+  @@index([reviewCategory])
+  @@index([shamCashTxId])
+  @@index([platformTxId])
+  @@index([platformUserId])
+  @@index([customerName])
+  @@index([txDateTime])
+  @@index([handledByUserId])
+  @@index([followUpStatus])
+  @@index([followUpAssignedTo, followUpStatus])
+  // Performance — composite indexes for the hottest aggregates:
+  // - Per-employee error/streak scans on /compensation, /my, /payroll.
+  @@index([handledByUserId, txDateTime, reviewCategory])
+  // - Upload-history drill-down by batch.
+  @@index([batchId, source, type])
+  // - Reconciliation period filters + status counts.
+  @@index([accountId, txDateTime, status])
+  // - Shift-manager queue: unconfirmed / delayed rows for the handling user.
+  @@index([handledByUserId, shiftConfirmedAt])
+  @@index([handledByUserId, hasDelay])
+  // Cascade-check on delete: the self-referential matchedTxId FK is SET NULL,
+  // so every row-delete triggers a scan for rows whose matchedTxId equals the
+  // deleted id. Without this index that scan is O(N) per delete — a 500-row
+  // batch delete becomes O(N²) and blows past Vercel's 60s function timeout
+  // on any transactions table larger than ~50k rows (root cause of the
+  // /upload-history 504s).
+  @@index([matchedTxId])
+  @@index([accountId, currency, txDateTime, id])
+  @@map("transactions")
+}
+
+// Read-model tables used by the financial dashboard, customer directory, and
+// duplicate detector. They are deliberately additive: existing routes can
+// continue to read `transactions` while the zero-downtime backfill completes.
+model FinancialDailySummary {
+  id                   String   @id @default(cuid())
+  businessDate         DateTime @db.Date
+  accountId            String
+  currency             String
+  matchedDepositCount  Int      @default(0)
+  matchedDepositAmount Decimal  @default(0) @db.Decimal(18, 2)
+  matchedWithdrawalCount Int    @default(0)
+  matchedWithdrawalAmount Decimal @default(0) @db.Decimal(18, 2)
+  pendingScCount       Int      @default(0)
+  pendingScAmount      Decimal  @default(0) @db.Decimal(18, 2)
+  pendingPCount        Int      @default(0)
+  pendingPAmount       Decimal  @default(0) @db.Decimal(18, 2)
+  discrepancyCount     Int      @default(0)
+  discrepancyAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  depositWasteAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  withdrawalWasteAmount Decimal @default(0) @db.Decimal(18, 2)
+  depositExtrasAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  withdrawalExtrasAmount Decimal @default(0) @db.Decimal(18, 2)
+  depositPlatformOnlyAmount Decimal @default(0) @db.Decimal(18, 2)
+  depositDiscrepancyPHigherAmount Decimal @default(0) @db.Decimal(18, 2)
+  withdrawalScOnlyAmount Decimal @default(0) @db.Decimal(18, 2)
+  withdrawalDiscrepancySCHigherAmount Decimal @default(0) @db.Decimal(18, 2)
+  depositScOnlyAmount Decimal @default(0) @db.Decimal(18, 2)
+  depositDiscrepancySCHigherAmount Decimal @default(0) @db.Decimal(18, 2)
+  withdrawalPlatformOnlyAmount Decimal @default(0) @db.Decimal(18, 2)
+  withdrawalDiscrepancyPHigherAmount Decimal @default(0) @db.Decimal(18, 2)
+  internalDepositCount Int      @default(0)
+  internalDepositAmount Decimal @default(0) @db.Decimal(18, 2)
+  internalWithdrawalCount Int   @default(0)
+  internalWithdrawalAmount Decimal @default(0) @db.Decimal(18, 2)
+  refreshedAt          DateTime @default(now())
+
+  @@unique([businessDate, accountId, currency])
+  @@index([accountId, businessDate])
+  @@map("financial_daily_summaries")
+}
+
+model CustomerSummary {
+  id               String   @id @default(cuid())
+  customerName     String
+  accountId        String
+  currency         String
+  depositCount     Int      @default(0)
+  depositAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  withdrawalCount  Int      @default(0)
+  withdrawalAmount Decimal  @default(0) @db.Decimal(18, 2)
+  matchedCount     Int      @default(0)
+  pendingCount     Int      @default(0)
+  discrepancyCount Int      @default(0)
+  firstSeen        DateTime
+  lastSeen         DateTime
+  refreshedAt      DateTime @default(now())
+
+  @@unique([customerName, accountId, currency])
+  @@index([accountId, lastSeen])
+  @@index([customerName])
+  @@map("customer_summaries")
+}
+
+model DuplicateScGroup {
+  id            String   @id @default(cuid())
+  accountId     String
+  shamCashTxId  String
+  pairCount     Int
+  // A linked pair with different currencies also belongs in the review queue.
+  hasCurrencyMismatch Boolean @default(false)
+  lastSeenAt    DateTime
+  refreshedAt   DateTime @default(now())
+
+  @@unique([accountId, shamCashTxId])
+  @@index([lastSeenAt])
+  @@map("duplicate_sc_groups")
+}
+
+// A small control table for resumable, zero-downtime read-model backfills.
+// It is modeled so future Prisma schema changes retain the table rather than
+// treating it as an unmanaged database object.
+model PerformanceBackfillState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now())
+
+  @@map("performance_backfill_state")
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  description String
+  amount      Decimal   @db.Decimal(15, 2)
+  category    String?
+  expenseDate DateTime
+  createdBy   User      @relation(fields: [userId], references: [id])
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@map("expenses")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE 2 — INTERNAL OPERATIONS (Modules A, B, C, D, E, G, I, J, K)
+// ════════════════════════════════════════════════════════════════════════════
+
+enum ShiftSessionStatus {
+  ACTIVE
+  PENDING_END
+  PENDING_START
+  COMPLETED
+  CANCELLED
+}
+
+enum ShiftNumber {
+  ONE
+  TWO
+  THREE
+}
+
+enum PayrollStatus {
+  DRAFT
+  CONFIRMED
+  PAID
+}
+
+enum AdvanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum BonusType {
+  CUMULATIVE
+  GROUP
+  MANUAL
+}
+
+model ShiftSession {
+  id                  String             @id @default(cuid())
+  user                User               @relation("ShiftSessionUser", fields: [userId], references: [id])
+  userId              String
+  shiftNumber         ShiftNumber?
+  startAt             DateTime           @default(now())
+  endAt               DateTime?
+  durationMinutes     Int?
+  status              ShiftSessionStatus @default(ACTIVE)
+  handoverFromUserId  String?
+  // Phase 4 — the full set of previous-shift employees this session takes
+  // over from (copied from the scheduled Shift at check-in). Auto-approval
+  // completes every one of these outgoing sessions.
+  handoverFromUserIds String[]           @default([])
+  approvedBy          User?              @relation("ShiftSessionApprover", fields: [approvedById], references: [id])
+  approvedById        String?
+  approvedAt          DateTime?
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  wallets      ShiftSessionWallet[]
+  transactions Transaction[]        @relation("TransactionSession")
+
+  @@index([userId])
+  @@index([status])
+  @@index([startAt])
+  // Performance — payroll daysWorked + attendance grid both filter by
+  // (userId, startAt range).
+  @@index([userId, startAt])
+  @@map("shift_sessions")
+}
+
+model ShiftSessionWallet {
+  id        String       @id @default(cuid())
+  session   ShiftSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  accountId String
+  createdAt DateTime     @default(now())
+
+  @@unique([sessionId, accountId])
+  @@index([sessionId])
+  @@map("shift_session_wallets")
+}
+
+model Shift {
+  id                  String               @id @default(cuid())
+  date                DateTime             @db.Date
+  shiftNumber         ShiftNumber
+  user                User                 @relation("ShiftAssignee", fields: [userId], references: [id])
+  userId              String
+  assignedBy          User?                @relation("ShiftAssigner", fields: [assignedById], references: [id])
+  assignedById        String?
+  isDayOff            Boolean              @default(false)
+  notes               String?
+  // Phase 3 — wallets this employee is planned to handle on this shift
+  wallets             ShiftWallet[]
+  // Phase 4 — the previous-shift employee(s) this person takes over from.
+  // Check-in is blocked until ALL of these users have requested check-out.
+  // A plain String[] of user ids (no FK relation — mirrors the existing
+  // Account.walletIdentifiers pattern).
+  handoverFromUserIds String[]             @default([])
+  // Phase F — coverage half-shifts triggered by this shift's owner being on
+  // leave. Two CoverageAssignment rows per affected day (first/second 4h).
+  coverages           CoverageAssignment[] @relation("ShiftCovers")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@unique([date, shiftNumber, userId])
+  @@index([date])
+  @@index([userId])
+  @@map("shifts")
+}
+
+// Leave grouping — the manager splits each shift's employees into small
+// working groups (max 6) plus a pool of "spare" employees. Each group has
+// exactly ONE spare/cover employee designated to take over whenever a
+// member goes on leave. A member's fixed weeklyOffDay must NOT be
+// consecutive to any groupmate's (a runtime check in /api/employees).
+model LeaveGroup {
+  id          String      @id @default(cuid())
+  name        String
+  shiftNumber ShiftNumber
+  coverUser   User?       @relation("LeaveGroupCover", fields: [coverUserId], references: [id], onDelete: SetNull)
+  coverUserId String?
+  members     User[]      @relation("LeaveGroupMembers")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([shiftNumber])
+  @@index([coverUserId])
+  @@map("leave_groups")
+}
+
+// Per-scheduled-shift wallet assignment. Replaces the legacy
+// EmployeeWalletAssignment (per-user permanent list) — the planning unit is
+// now (employee × day × shift), letting admins/managers vary wallet allocation
+// day-to-day directly in the schedule view.
+model ShiftWallet {
+  id        String   @id @default(cuid())
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  shiftId   String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  createdAt DateTime @default(now())
+
+  @@unique([shiftId, accountId])
+  @@index([shiftId])
+  @@index([accountId])
+  @@map("shift_wallets")
+}
+
+model PayrollEntry {
+  id              String           @id @default(cuid())
+  user            User             @relation(fields: [userId], references: [id])
+  userId          String
+  weekStart       DateTime         @db.Date
+  weekEnd         DateTime         @db.Date
+  baseSalary      Decimal          @db.Decimal(15, 2)
+  workedHours     Decimal          @default(0) @db.Decimal(7, 2)
+  expectedHours   Decimal          @default(40) @db.Decimal(7, 2)
+  bonusAmount     Decimal          @default(0) @db.Decimal(15, 2)
+  advanceAmount   Decimal          @default(0) @db.Decimal(15, 2)
+  deductions      Decimal          @default(0) @db.Decimal(15, 2)
+  netAmount       Decimal          @db.Decimal(15, 2)
+  status          PayrollStatus    @default(DRAFT)
+  paidAt          DateTime?
+  notes           String?
+  advanceRequests AdvanceRequest[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([userId, weekStart])
+  @@index([userId])
+  @@index([weekStart])
+  @@map("payroll_entries")
+}
+
+model AdvanceRequest {
+  id             String        @id @default(cuid())
+  user           User          @relation("AdvanceRequester", fields: [userId], references: [id])
+  userId         String
+  amount         Decimal       @db.Decimal(15, 2)
+  reason         String?
+  status         AdvanceStatus @default(PENDING)
+  approvedBy     User?         @relation("AdvanceApprover", fields: [approvedById], references: [id])
+  approvedById   String?
+  approvedAt     DateTime?
+  payrollEntry   PayrollEntry? @relation(fields: [payrollEntryId], references: [id])
+  payrollEntryId String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("advance_requests")
+}
+
+model BonusLog {
+  id          String     @id @default(cuid())
+  user        User       @relation("BonusRecipient", fields: [userId], references: [id])
+  userId      String
+  amount      Decimal    @db.Decimal(15, 2)
+  type        BonusType
+  reason      String?
+  createdBy   User?      @relation("BonusCreator", fields: [createdById], references: [id])
+  createdById String?
+  weekStart   DateTime?  @db.Date
+  appliedAt   DateTime?
+  // Phase D — when the bonus came from a configurable rule, link back to it
+  // for audit + replay. Null for legacy / manual / group entries.
+  ruleId      String?
+  rule        BonusRule? @relation("BonusLogsByRule", fields: [ruleId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([weekStart])
+  // Performance — /compensation aggregates by (userId, appliedAt range).
+  @@index([userId, appliedAt])
+  @@map("bonus_logs")
+}
+
+// ─── Custom Roles & Permissions (Phase 3) ───────────────────────────────────
+// These tables enable admin-defined roles. Until `prisma db push` is run on
+// Neon, the application falls back to the legacy enum-role + ROLE_DEFAULT_
+// PERMISSIONS map. The /roles page degrades gracefully when the tables are
+// missing.
+
+model CustomRole {
+  id           String               @id @default(cuid())
+  name         String               @unique
+  displayName  String
+  description  String?
+  isSystemRole Boolean              @default(false)
+  isActive     Boolean              @default(true)
+  permissions  RolePermission[]
+  assignments  UserRoleAssignment[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@map("custom_roles")
+}
+
+model RolePermission {
+  id            String     @id @default(cuid())
+  role          CustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+  permissionKey String
+
+  @@unique([roleId, permissionKey])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  id         String     @id @default(cuid())
+  user       User       @relation("UserCustomRoles", fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  role       CustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId     String
+  assignedAt DateTime   @default(now())
+
+  @@unique([userId, roleId])
+  @@map("user_role_assignments")
+}
+
+// ─── Phase 3: Global System Settings ───
+// Simple key/value store for app-wide settings (e.g. default weekly off days).
+// Read via `getSystemSetting(key, fallback)` helper which is defensive and
+// returns the fallback if the table doesn't yet exist (pre-`prisma db push`).
+// ─── Phase 3: Resolved customer names ───
+// Canonical mapping platformUserId → displayName, populated automatically the
+// moment a transaction reaches MATCHED status with a non-empty SC accountName,
+// and editable by admins. Resolver consults this table FIRST before falling
+// back to scanning rawData.
+model Customer {
+  platformUserId String   @id
+  displayName    String
+  source         String   @default("AUTO") // AUTO | MANUAL
+  updatedBy      String?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@map("customers")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("system_settings")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE D — Configurable Bonus Rules Engine
+// ════════════════════════════════════════════════════════════════════════════
+
+enum BonusRuleAmountType {
+  FIXED // كل أسبوع نظيف = X ل.س ثابتة
+  PERCENT // كل أسبوع نظيف = X% من الراتب الأساس
+  TIERED // tiers — تُحدد قائمة TierRule
+}
+
+enum BonusRuleInterval {
+  WEEKLY
+  DAILY
+}
+
+// One global cumulative bonus rule at a time (isActive=true). The active
+// rule replaces the legacy hardcoded `5,000 SYP per clean week`.
+model BonusRule {
+  id          String              @id @default(cuid())
+  name        String              @unique
+  description String?
+  interval    BonusRuleInterval   @default(WEEKLY)
+  amountType  BonusRuleAmountType
+  // Used when amountType is FIXED or PERCENT (single value applied per
+  // clean interval). For TIERED, these are ignored and `tiers` drives.
+  baseAmount  Decimal?            @db.Decimal(15, 2)
+  basePercent Decimal?            @db.Decimal(5, 2)
+  // Streak cap — once cleanStreak reaches this, additional intervals stop
+  // accruing. Null = no cap.
+  maxStreak   Int?
+  // Whether the bonus accrues cumulatively (sum across the streak) or only
+  // pays the latest interval. Default = cumulative for back-compat.
+  cumulative  Boolean             @default(true)
+  isActive    Boolean             @default(true)
+  // Restrict which user roles this rule applies to. Empty array = no
+  // restriction (applies to every active employee). Otherwise the role
+  // string must appear in the array (e.g. ['EMPLOYEE']) for the bonus
+  // to apply. New rules from the UI default to ['EMPLOYEE'].
+  targetRoles String[]            @default([])
+  tiers       TierRule[]
+  bonusLogs   BonusLog[]          @relation("BonusLogsByRule")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([isActive])
+  @@map("bonus_rules")
+}
+
+// Each tier applies when cleanStreak is in [streakMin, streakMax].
+// Open-ended tiers (streakMax = null) cover everything from streakMin up.
+model TierRule {
+  id          String    @id @default(cuid())
+  bonusRule   BonusRule @relation(fields: [bonusRuleId], references: [id], onDelete: Cascade)
+  bonusRuleId String
+  streakMin   Int
+  streakMax   Int?
+  amount      Decimal?  @db.Decimal(15, 2)
+  percent     Decimal?  @db.Decimal(5, 2)
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([bonusRuleId])
+  @@map("tier_rules")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE E — Notifications (in-app bell + /my dashboard)
+// ════════════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String    @id @default(cuid())
+  user      User      @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  // Free-form key. Today: BONUS_RECEIVED, DEDUCTION_APPLIED, PAYROLL_PAID,
+  // COMPLAINT_ATTRIBUTED, ADVANCE_APPROVED, ADVANCE_REJECTED.
+  type      String
+  title     String
+  body      String?
+  // Optional URL to deep-link to (e.g. /payroll, /follow-ups/123).
+  href      String?
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE F — Leave rotation (global; no branch scoping)
+// ════════════════════════════════════════════════════════════════════════════
+
+// LeaveAssignment / LeaveStatus removed — the fixed-per-user weekly
+// off-day now lives on User.weeklyOffDay. See the plan for details.
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE G — Per-user permission overrides
+// ════════════════════════════════════════════════════════════════════════════
+
+// allow/deny per (user, capability key). The capability key is one of the
+// strings in src/lib/permissions/keys.ts. Resolution order at runtime:
+//   override(allow|deny) → role default → false
+model PermissionOverride {
+  id            String   @id @default(cuid())
+  user          User     @relation("UserPermissionOverrides", fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  permissionKey String
+  isAllowed     Boolean
+  reason        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, permissionKey])
+  @@index([userId])
+  @@map("permission_overrides")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE F — Coverage half-shifts (4h splits when a teammate is on leave)
+// ════════════════════════════════════════════════════════════════════════════
+
+// One row per half-shift covered. When applying wallet-group leaves, each
+// on-leave shift's 8 hours are split into two 4h halves; each half is
+// assigned to a teammate via a CoverageAssignment row. Lookups by
+// (userId, date) feed payroll's expectedHours and the check-in/out
+// late-arrival window.
+model CoverageAssignment {
+  id              String   @id @default(cuid())
+  user            User     @relation("CoveringUser", fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  date            DateTime @db.Date
+  // "HH:MM" 24-hour. Stored as strings so DST and timezone math never bite.
+  startTime       String
+  endTime         String
+  // The Shift this is covering for (the on-leave employee's normal shift).
+  // Optional because a leave may exist without a scheduled shift to cover.
+  originalShift   Shift?   @relation("ShiftCovers", fields: [originalShiftId], references: [id], onDelete: SetNull)
+  originalShiftId String?
+  // The user being covered. Kept as a scalar (no relation) to allow soft
+  // references when the on-leave user record changes.
+  coverForUserId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, date, startTime])
+  @@index([userId, date])
+  @@index([originalShiftId])
+  @@map("coverage_assignments")
+}

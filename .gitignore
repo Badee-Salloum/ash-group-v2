@@ -1,0 +1,36 @@
+node_modules
+.next
+.env
+.env.production
+.env.local
+.env.*
+!.env.example
+.vercel
+
+# Local Claude/agent settings — may contain tokens
+.claude/settings.local.json
+.claude/.credentials.json
+.claude-flow/
+
+# Build artifacts
+.next/
+out/
+dist/
+/coverage/
+*.tsbuildinfo
+
+# Local agent runtime state is not part of the application handoff.
+.hive-mind/
+.swarm/
+
+# Private keys and credential bundles must never enter a handoff commit.
+*.key
+*.pem
+*.p12
+*.pfx
+
+# OS
+.DS_Store
+Thumbs.db
+
+.vercel
